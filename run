@@ -1,0 +1,821 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "bundler/inline"
+
+gemfile do
+  source "https://rubygems.org"
+
+  gem "parser", require: "parser/current"
+  gem "syntax_tree"
+  gem "benchmark-ips"
+end
+
+module SyntaxTree
+  using Module.new {
+    refine SyntaxTree.singleton_class do
+      def n(type, children = [], opts = {})
+        ::Parser::AST::Node.new(type, children, opts)
+      end
+    end
+  }
+
+  class Alias
+    def to_parser
+      SyntaxTree.n(:alias, [left.to_parser, right.to_parser])
+    end
+  end
+
+  class ARef
+    def to_parser
+      SyntaxTree.n(:send, [collection.to_parser, :[], *index&.parts&.map(&:to_parser)])
+    end
+  end
+
+  class ARefField
+    def to_parser
+      raise "Skipped because it's implemented in Assign"
+    end
+  end
+
+  class ArgBlock
+    def to_parser
+      SyntaxTree.n(:block_pass, [value.to_parser])
+    end
+  end
+
+  class ArgStar
+    def to_parser
+      SyntaxTree.n(:splat, [value.to_parser])
+    end
+  end
+
+  class ArrayLiteral
+    def to_parser
+      SyntaxTree.n(:array, [*contents.parts.map(&:to_parser)])
+    end
+  end
+
+  class Assign
+    def to_parser
+      case target
+      in ARefField[collection:, index:]
+        SyntaxTree.n(:send, [collection.to_parser, :[]=, *index&.parts&.map(&:to_parser), value.to_parser])
+      in ConstPathField[parent:, constant:]
+        SyntaxTree.n(:casgn, [parent.to_parser, constant.value.to_sym, value.to_parser])
+      in Field[parent:, operator:, name:]
+        type = (operator in Op[value: "&."]) ? :csend : :send
+        SyntaxTree.n(type, [parent.to_parser, "#{name.value}=".to_sym, value.to_parser])
+      in TopConstField[constant:]
+        SyntaxTree.n(:casgn, [SyntaxTree.n(:cbase), constant.value.to_sym, value.to_parser])
+      in VarField[value: CVar]
+        SyntaxTree.n(:cvasgn, [target.value.value.to_sym, value.to_parser])
+      in VarField[value: GVar]
+        SyntaxTree.n(:gvasgn, [target.value.value.to_sym, value.to_parser])
+      in VarField[value: Ident]
+        SyntaxTree.n(:lvasgn, [target.value.value.to_sym, value.to_parser])
+      in VarField[value: IVar]
+        SyntaxTree.n(:ivasgn, [target.value.value.to_sym, value.to_parser])
+      in VarField[value: VarRef]
+        SyntaxTree.n(:lvasgn, [target.value.value.to_sym, value.to_parser])
+      end
+    end
+  end
+
+  class Assoc
+    def to_parser
+      SyntaxTree.n(:pair, [key.to_parser, value.to_parser])
+    end
+  end
+
+  class AssocSplat
+    def to_parser
+      SyntaxTree.n(:kwsplat, [value.to_parser])
+    end
+  end
+
+  class Backref
+    def to_parser
+      SyntaxTree.n(:nth_ref, [value[1..-1].to_i])
+    end
+  end
+
+  class BareAssocHash
+    def to_parser
+      SyntaxTree.n(:hash, [*assocs.map(&:to_parser)])
+    end
+  end
+
+  class BEGINBlock
+    def to_parser
+      SyntaxTree.n(:preexe, [statements.to_parser])
+    end
+  end
+
+  class Begin
+    def to_parser
+      SyntaxTree.n(:kwbegin, [bodystmt.to_parser])
+    end
+  end
+
+  class Binary
+    def to_parser
+      SyntaxTree.n(:send, [left.to_parser, operator, right.to_parser])
+    end
+  end
+
+  class BlockArg
+    def to_parser
+      SyntaxTree.n(:blockarg, [name.value.to_sym])
+    end
+  end
+
+  class BlockVar
+    def to_parser
+      children = params.to_parser_children
+
+      locals.each do |local|
+        children << SyntaxTree.n(:shadowarg, [local.value.to_sym])
+      end
+
+      SyntaxTree.n(:args, children)
+    end
+  end
+
+  class BodyStmt
+    def to_parser
+      statements.to_parser
+    end
+  end
+
+  class BraceBlock
+    def to_parser
+      SyntaxTree.n(:block, [statements.to_parser])
+    end
+  end
+
+  class Break
+    def to_parser
+      SyntaxTree.n(:break, arguments.parts.map(&:to_parser))
+    end
+  end
+
+  class Call
+    def to_parser
+      type = (operator in Op[value: "&."]) ? :csend : :send
+
+      case arguments
+      in nil
+        SyntaxTree.n(type, [receiver.to_parser, message.value.to_sym])
+      in ArgParen[arguments: { parts: }]
+        SyntaxTree.n(type, [receiver.to_parser, message.value.to_sym, *parts.map(&:to_parser)])
+      end
+    end
+  end
+
+  class Case
+    def to_parser
+      clauses = [consequent]
+      clauses << clauses.last.consequent while clauses.last && !(clauses.last in Else)
+
+      type = (clauses.first in When) ? :case : :case_match
+      SyntaxTree.n(type, [value.to_parser, *clauses.map { |clause| clause&.to_parser }])
+    end
+  end
+
+  class CHAR
+    def to_parser
+      SyntaxTree.n(:str, [value[1..-1]])
+    end
+  end
+
+  class ClassDeclaration
+    def to_parser
+      SyntaxTree.n(:class, [constant.to_parser, superclass&.to_parser, bodystmt.to_parser])
+    end
+  end
+
+  class Command
+    def to_parser
+      SyntaxTree.n(:send, [nil, message.value.to_sym, *arguments.parts.map(&:to_parser)])
+    end
+  end
+
+  class CommandCall
+    def to_parser
+      type = (operator in Op[value: "&."]) ? :csend : :send
+      SyntaxTree.n(type, [receiver.to_parser, message.value.to_sym, *arguments.parts.map(&:to_parser)])
+    end
+  end
+
+  class Const
+    def to_parser
+      SyntaxTree.n(:const, [nil, value.to_sym])
+    end
+  end
+
+  class ConstPathField
+    def to_parser
+      SyntaxTree.n(:const, [parent.to_parser, constant.value.to_sym])
+    end
+  end
+
+  class ConstPathRef
+    def to_parser
+      SyntaxTree.n(:const, [parent.to_parser, constant.value.to_sym])
+    end
+  end
+
+  class ConstRef
+    def to_parser
+      SyntaxTree.n(:const, [nil, constant.value.to_sym])
+    end
+  end
+
+  class CVar
+    def to_parser
+      SyntaxTree.n(:cvar, [value.to_sym])
+    end
+  end
+
+  class Defined
+    def to_parser
+      SyntaxTree.n(:defined?, [value.to_parser])
+    end
+  end
+
+  class DoBlock
+    def to_parser
+      SyntaxTree.n(:block, [bodystmt.to_parser])
+    end
+  end
+
+  class Dot2
+    def to_parser
+      SyntaxTree.n(:irange, [left.to_parser, right.to_parser])
+    end
+  end
+
+  class Dot3
+    def to_parser
+      SyntaxTree.n(:erange, [left.to_parser, right.to_parser])
+    end
+  end
+
+  class DynaSymbol
+    def to_parser
+      SyntaxTree.n(:dsym, parts.map(&:to_parser))
+    end
+  end
+
+  class Else
+    def to_parser
+      statements.to_parser
+    end
+  end
+
+  class Elsif
+    def to_parser
+      SyntaxTree.n(:if, [predicate.to_parser, statements.to_parser, consequent&.to_parser])
+    end
+  end
+
+  class ENDBlock
+    def to_parser
+      SyntaxTree.n(:postexe, [statements.to_parser])
+    end
+  end
+
+  class FCall
+    def to_parser
+      case arguments
+      in Args[parts: []]
+        SyntaxTree.n(:send, [nil, value.value.to_sym])
+      in ArgParen[arguments: { parts: }]
+        SyntaxTree.n(:send, [nil, value.value.to_sym, *parts.map(&:to_parser)])
+      end
+    end
+  end
+
+  class FloatLiteral
+    def to_parser
+      SyntaxTree.n(:float, [value.to_f])
+    end
+  end
+
+  class For
+    def to_parser
+      SyntaxTree.n(:for, [index.to_parser, collection.to_parser, statements.to_parser])
+    end
+  end
+
+  class GVar
+    def to_parser
+      SyntaxTree.n(:gvar, [value.to_sym])
+    end
+  end
+
+  class HashLiteral
+    def to_parser
+      SyntaxTree.n(:hash, assocs.map(&:to_parser))
+    end
+  end
+
+  class Heredoc
+    def to_parser
+      segments =
+        parts.flat_map do |part|
+          if (part in TStringContent[value:]) && part.value.count("\n") > 1
+            part.value.split("\n").map { |line| SyntaxTree.n(:str, ["#{line}\n"]) }
+          else
+            [part.to_parser]
+          end
+        end
+
+      segments.length > 1 ? SyntaxTree.n(:dstr, segments) : segments.first
+    end
+  end
+
+  class If
+    def to_parser
+      SyntaxTree.n(:if, [predicate.to_parser, statements.to_parser, consequent&.to_parser])
+    end
+  end
+
+  class IfMod
+    def to_parser
+      SyntaxTree.n(:if, [predicate.to_parser, statement.to_parser, nil])
+    end
+  end
+
+  class IfOp
+    def to_parser
+      SyntaxTree.n(:if, [predicate.to_parser, truthy.to_parser, falsy.to_parser])
+    end
+  end
+
+  class Imaginary
+    def to_parser
+      SyntaxTree.n(:complex, [value.to_c])
+    end
+  end
+
+  class In
+    def to_parser
+      SyntaxTree.n(:in_pattern, [pattern.to_parser, statements.to_parser])
+    end
+  end
+
+  class Int
+    def to_parser
+      SyntaxTree.n(:int, [value.to_i])
+    end
+  end
+
+  class IVar
+    def to_parser
+      SyntaxTree.n(:ivar, [value.to_sym])
+    end
+  end
+
+  class Kw
+    def to_parser
+      SyntaxTree.n(value.to_sym)
+    end
+  end
+
+  class KwRestParam
+    def to_parser
+      SyntaxTree.n(:kwrestarg, [name.value.to_sym])
+    end
+  end
+
+  class Label
+    def to_parser
+      SyntaxTree.n(:sym, [value.chomp(":").to_sym])
+    end
+  end
+
+  class Lambda
+    def to_parser
+      args = (params in Params) ? params : params.contents
+      SyntaxTree.n(:block, [SyntaxTree.n(:send, [nil, :lambda]), SyntaxTree.n(:args, args.to_parser_children), statements.to_parser])
+    end
+  end
+
+  class MethodAddBlock
+    def to_parser
+      statements = (block in BraceBlock) ? block.statements : block.bodystmt
+      SyntaxTree.n(:block, [call.to_parser, block.block_var&.to_parser, statements.to_parser])
+    end
+  end
+
+  class ModuleDeclaration
+    def to_parser
+      SyntaxTree.n(:module, [constant.to_parser, bodystmt.to_parser])
+    end
+  end
+
+  class MRHS
+    def to_parser
+      SyntaxTree.n(:array, parts.map(&:to_parser))
+    end
+  end
+
+  class Next
+    def to_parser
+      SyntaxTree.n(:next, arguments.parts.map(&:to_parser))
+    end
+  end
+
+  class Not
+    def to_parser
+      SyntaxTree.n(:send, [statement.to_parser, :"!"])
+    end
+  end
+
+  class OpAssign
+    def to_parser
+      case target
+      in VarField
+        SyntaxTree.n(:op_asgn, [target.to_parser, operator.value.chomp("=").to_sym, value.to_parser])
+      end
+    end
+  end
+
+  class Params
+    def to_parser_children
+      children = []
+
+      children += requireds.map { |required| SyntaxTree.n(:arg, [required.value.to_sym]) }
+      children += optionals.map { |(name, value)| SyntaxTree.n(:optarg, [name.value.to_sym, value.to_parser]) }
+      children << rest.to_parser if rest && !(rest in ExcessedComma)
+      children += posts.map { |post| SyntaxTree.n(:arg, [post.value.to_sym]) }
+      children +=
+        keywords.map do |(name, value)|
+          key = name.value.chomp(":").to_sym
+          value ? SyntaxTree.n(:kwoptarg, [key, value.to_parser]) : SyntaxTree.n(:kwarg, [key])
+        end
+
+      children << keyword_rest.to_parser if keyword_rest
+      children << block.to_parser if block
+
+      children
+    end
+  end
+
+  class Paren
+    def to_parser
+      SyntaxTree.n(:begin, [contents.to_parser])
+    end
+  end
+
+  class Program
+    def to_parser
+      statements.to_parser
+    end
+  end
+
+  class QSymbols
+    def to_parser
+      SyntaxTree.n(:array, elements.map { |element| SyntaxTree.n(:sym, [element.value.to_sym]) })
+    end
+  end
+
+  class QWords
+    def to_parser
+      SyntaxTree.n(:array, elements.map(&:to_parser))
+    end
+  end
+
+  class RAssign
+    def to_parser
+      child =
+        case pattern
+        in VarField
+          SyntaxTree.n(:match_var, [pattern.value.value.to_sym])
+        else
+          pattern.to_parser
+        end
+
+      SyntaxTree.n(:match_pattern_p, [value.to_parser, child])
+    end
+  end
+
+  class RationalLiteral
+    def to_parser
+      SyntaxTree.n(:rational, [value.to_r])
+    end
+  end
+
+  class Redo
+    def to_parser
+      SyntaxTree.n(:redo)
+    end
+  end
+
+  class RegexpLiteral
+    def to_parser
+      children = parts.map(&:to_parser)
+      children << SyntaxTree.n(:regopt, ending.scan(/[a-z]/).sort.map(&:to_sym))
+
+      SyntaxTree.n(:regexp, children)
+    end
+  end
+
+  class RescueMod
+    def to_parser
+      SyntaxTree.n(:rescue, [statement.to_parser, SyntaxTree.n(:resbody, [nil, nil, value.to_parser]), nil])
+    end
+  end
+
+  class RestParam
+    def to_parser
+      SyntaxTree.n(:restarg, [name.value.to_sym])
+    end
+  end
+
+  class Retry
+    def to_parser
+      SyntaxTree.n(:retry)
+    end
+  end
+
+  class Return
+    def to_parser
+      SyntaxTree.n(:return, arguments.parts.map(&:to_parser))
+    end
+  end
+
+  class Return0
+    def to_parser
+      SyntaxTree.n(:return)
+    end
+  end
+
+  class SClass
+    def to_parser
+      SyntaxTree.n(:sclass, [target.to_parser, bodystmt.to_parser])
+    end
+  end
+
+  class Statements
+    def to_parser
+      nodes = body.reject { |node| node in Comment | EmbDoc | VoidStmt }
+
+      case nodes
+      in []
+        nil
+      in [statement]
+        statement.to_parser
+      else
+        SyntaxTree.n(:begin, nodes.map(&:to_parser))
+      end
+    end
+  end
+
+  class StringConcat
+    def to_parser
+      SyntaxTree.n(:dstr, [left.to_parser, right.to_parser])
+    end
+  end
+
+  class StringDVar
+    def to_parser
+      variable.to_parser
+    end
+  end
+
+  class StringEmbExpr
+    def to_parser
+      child = statements.to_parser
+      SyntaxTree.n(:begin, child ? [child] : [])
+    end
+  end
+
+  class StringLiteral
+    def to_parser
+      if parts.length > 1
+        SyntaxTree.n(:dstr, parts.map(&:to_parser))
+      elsif parts.length == 1
+        parts.first.to_parser
+      else
+        SyntaxTree.n(:str, [""])
+      end
+    end
+  end
+
+  class Super
+    def to_parser
+      case arguments
+      in ArgParen[arguments: { parts: }]
+        SyntaxTree.n(:super, parts.map(&:to_parser))
+      in Args[parts:]
+        SyntaxTree.n(:super, parts.map(&:to_parser))
+      end
+    end
+  end
+
+  class SymbolLiteral
+    def to_parser
+      SyntaxTree.n(:sym, [value.value.to_sym])
+    end
+  end
+
+  class Symbols
+    def to_parser
+      children =
+        elements.map do |element|
+          if element.parts.length > 1
+            SyntaxTree.n(:dsym, element.parts.map(&:to_parser))
+          else
+            SyntaxTree.n(:sym, [element.parts.first.value.to_sym])
+          end
+        end
+
+      SyntaxTree.n(:array, children)
+    end
+  end
+
+  class TopConstField
+    def to_parser
+      SyntaxTree.n(:const, [SyntaxTree.n(:cbase), constant.value.to_sym])
+    end
+  end
+
+  class TopConstRef
+    def to_parser
+      SyntaxTree.n(:const, [SyntaxTree.n(:cbase), constant.value.to_sym])
+    end
+  end
+
+  class TStringContent
+    def to_parser
+      SyntaxTree.n(:str, [value])
+    end
+  end
+
+  class Unary
+    def to_parser
+      symbol =
+        case operator
+        when "-" then :"-@"
+        when "+" then :"+@"
+        else
+          operator.to_sym
+        end
+
+      SyntaxTree.n(:send, [statement.to_parser, symbol])
+    end
+  end
+
+  class Undef
+    def to_parser
+      SyntaxTree.n(:undef, symbols.map(&:to_parser))
+    end
+  end
+
+  class Unless
+    def to_parser
+      SyntaxTree.n(:if, [predicate.to_parser, consequent&.to_parser, statements.to_parser])
+    end
+  end
+
+  class UnlessMod
+    def to_parser
+      SyntaxTree.n(:if, [predicate.to_parser, nil, statement.to_parser])
+    end
+  end
+
+  class Until
+    def to_parser
+      SyntaxTree.n(:until, [predicate.to_parser, statements.to_parser])
+    end
+  end
+
+  class UntilMod
+    def to_parser
+      SyntaxTree.n(:until, [predicate.to_parser, statement.to_parser])
+    end
+  end
+
+  class VarAlias
+    def to_parser
+      SyntaxTree.n(:alias, [left.to_parser, right.to_parser])
+    end
+  end
+
+  class VarField
+    def to_parser
+      type =
+        case value
+        in CVar then :cvasgn
+        in GVar then :gvasgn
+        in Ident then :lvasgn
+        in IVar then :ivasgn
+        in VarRef then :lvasgn
+        end
+
+      SyntaxTree.n(type, [value.value.to_sym])
+    end
+  end
+
+  class VarRef
+    def to_parser
+      value.to_parser
+    end
+  end
+
+  class VCall
+    def to_parser
+      SyntaxTree.n(:send, [nil, value.value.to_sym])
+    end
+  end
+
+  class When
+    def to_parser
+      SyntaxTree.n(:when, [*arguments.parts.map(&:to_parser), statements.to_parser])
+    end
+  end
+
+  class While
+    def to_parser
+      SyntaxTree.n(:while, [predicate.to_parser, statements.to_parser])
+    end
+  end
+
+  class WhileMod
+    def to_parser
+      SyntaxTree.n(:while, [predicate.to_parser, statement.to_parser])
+    end
+  end
+
+  class Word
+    def to_parser
+      if parts.length > 1
+        SyntaxTree.n(:dstr, parts.map(&:to_parser))
+      else
+        parts.first.to_parser
+      end
+    end
+  end
+
+  class Words
+    def to_parser
+      SyntaxTree.n(:array, elements.map(&:to_parser))
+    end
+  end
+
+  class XStringLiteral
+    def to_parser
+      SyntaxTree.n(:xstr, parts.map(&:to_parser))
+    end
+  end
+
+  class Yield
+    def to_parser
+      case arguments
+      in Args[parts:]
+        SyntaxTree.n(:yield, parts.map(&:to_parser))
+      in Paren[contents: Args[parts:]]
+        SyntaxTree.n(:yield, parts.map(&:to_parser))
+      end
+    end
+  end
+
+  class Yield0
+    def to_parser
+      SyntaxTree.n(:yield)
+    end
+  end
+
+  class ZSuper
+    def to_parser
+      SyntaxTree.n(:zsuper)
+    end
+  end
+end
+
+source = DATA.read
+
+stree_ast = -> { SyntaxTree.parse(source).to_parser }
+parser_ast = -> { Parser::CurrentRuby.parse(source) }
+
+stree_val = stree_ast.call
+parser_val = parser_ast.call
+
+if stree_val!= parser_val
+  warn("Expected #{stree_val} to equal #{parser_val}")
+  exit(1)
+else
+  pp stree_val
+end
+
+Benchmark.ips do |x|
+  x.report("stree", &stree_ast)
+  x.report("parser", &parser_ast)
+  x.compare!
+end
+
+__END__
+1 + 2
