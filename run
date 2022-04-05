@@ -17,6 +17,10 @@ module SyntaxTree
       def n(type, children = [], opts = {})
         ::Parser::AST::Node.new(type, children, opts)
       end
+
+      def send_type(operator)
+        (operator in Op[value: "&."]) ? :csend : :send
+      end
     end
   }
 
@@ -40,13 +44,19 @@ module SyntaxTree
 
   class ArgBlock
     def to_parser
-      SyntaxTree.n(:block_pass, [value.to_parser])
+      SyntaxTree.n(:block_pass, [value&.to_parser])
     end
   end
 
   class ArgStar
     def to_parser
       SyntaxTree.n(:splat, [value.to_parser])
+    end
+  end
+
+  class ArgsForward
+    def to_parser
+      SyntaxTree.n(:forward_arg)
     end
   end
 
@@ -79,30 +89,29 @@ module SyntaxTree
       case target
       in ARefField[collection:, index:]
         SyntaxTree.n(:send, [collection.to_parser, :[]=, *index&.parts&.map(&:to_parser), value.to_parser])
-      in ConstPathField[parent:, constant:]
-        SyntaxTree.n(:casgn, [parent.to_parser, constant.value.to_sym, value.to_parser])
+      in ConstPathField
+        SyntaxTree.n(:casgn, target.to_parser.children + [value.to_parser])
       in Field[parent:, operator:, name:]
-        type = (operator in Op[value: "&."]) ? :csend : :send
-        SyntaxTree.n(type, [parent.to_parser, "#{name.value}=".to_sym, value.to_parser])
-      in TopConstField[constant:]
-        SyntaxTree.n(:casgn, [SyntaxTree.n(:cbase), constant.value.to_sym, value.to_parser])
+        SyntaxTree.n(SyntaxTree.send_type(operator), [parent.to_parser, "#{name.value}=".to_sym, value.to_parser])
+      in TopConstField
+        SyntaxTree.n(:casgn, target.to_parser.children + [value.to_parser])
       in VarField[value: CVar]
-        SyntaxTree.n(:cvasgn, [target.value.value.to_sym, value.to_parser])
+        SyntaxTree.n(:cvasgn, target.to_parser.children + [value.to_parser])
       in VarField[value: GVar]
-        SyntaxTree.n(:gvasgn, [target.value.value.to_sym, value.to_parser])
+        SyntaxTree.n(:gvasgn, target.to_parser.children + [value.to_parser])
       in VarField[value: Ident]
-        SyntaxTree.n(:lvasgn, [target.value.value.to_sym, value.to_parser])
+        SyntaxTree.n(:lvasgn, target.to_parser.children + [value.to_parser])
       in VarField[value: IVar]
-        SyntaxTree.n(:ivasgn, [target.value.value.to_sym, value.to_parser])
+        SyntaxTree.n(:ivasgn, target.to_parser.children + [value.to_parser])
       in VarField[value: VarRef]
-        SyntaxTree.n(:lvasgn, [target.value.value.to_sym, value.to_parser])
+        SyntaxTree.n(:lvasgn, target.to_parser.children + [value.to_parser])
       end
     end
   end
 
   class Assoc
     def to_parser
-      SyntaxTree.n(:pair, [key.to_parser, value.to_parser])
+      SyntaxTree.n(:pair, [key.to_parser, value&.to_parser])
     end
   end
 
@@ -144,13 +153,13 @@ module SyntaxTree
 
   class BlockArg
     def to_parser
-      SyntaxTree.n(:blockarg, [name.value.to_sym])
+      SyntaxTree.n(:blockarg, [name&.value&.to_sym])
     end
   end
 
   class BlockVar
     def to_parser
-      children = params.to_parser_children
+      children = params.to_parser.children.dup
 
       locals.each do |local|
         children << SyntaxTree.n(:shadowarg, [local.value.to_sym])
@@ -180,14 +189,9 @@ module SyntaxTree
 
   class Call
     def to_parser
-      type = (operator in Op[value: "&."]) ? :csend : :send
-
-      case arguments
-      in nil
-        SyntaxTree.n(type, [receiver.to_parser, message.value.to_sym])
-      in ArgParen[arguments: { parts: }]
-        SyntaxTree.n(type, [receiver.to_parser, message.value.to_sym, *parts.map(&:to_parser)])
-      end
+      children = [receiver.to_parser, message.value.to_sym]
+      children += arguments.arguments.parts.map(&:to_parser) if arguments
+      SyntaxTree.n(SyntaxTree.send_type(operator), children)
     end
   end
 
@@ -205,7 +209,7 @@ module SyntaxTree
 
       clauses[clauses.length - 1] = SyntaxTree.n(:empty_else) if type == :case_match && clauses.last.nil?
 
-      SyntaxTree.n(type, [value.to_parser, *clauses])
+      SyntaxTree.n(type, [value&.to_parser, *clauses])
     end
   end
 
@@ -229,8 +233,9 @@ module SyntaxTree
 
   class CommandCall
     def to_parser
-      type = (operator in Op[value: "&."]) ? :csend : :send
-      SyntaxTree.n(type, [receiver.to_parser, message.value.to_sym, *arguments.parts.map(&:to_parser)])
+      children = [receiver.to_parser, message.value.to_sym]
+      children += arguments.parts.map(&:to_parser)
+      SyntaxTree.n(SyntaxTree.send_type(operator), children)
     end
   end
 
@@ -266,27 +271,18 @@ module SyntaxTree
 
   class Def
     def to_parser
-      args =
-        case params
-        in Params => node then node
-        in Paren[contents: Params => node] then node
-        end
-
-      SyntaxTree.n(:def, [name.value.to_sym, SyntaxTree.n(:args, args.to_parser_children), bodystmt.to_parser])
+      args = (params in Params) ? params : params.contents
+      SyntaxTree.n(:def, [name.value.to_sym, args.to_parser, bodystmt.to_parser])
     end
   end
 
   class DefEndless
     def to_parser
-      args =
-        case paren
-        in Params => node then node
-        in Paren[contents: Params => node] then node
-        end
-
       children = []
       children << target.to_parser if target
-      children += [name.value.to_sym, SyntaxTree.n(:args, args.to_parser_children), statement.to_parser]
+
+      args = (paren in Params) ? paren : paren.contents
+      children += [name.value.to_sym, args.to_parser, statement.to_parser]
 
       SyntaxTree.n(target ? :defs : :def, children)
     end
@@ -300,13 +296,8 @@ module SyntaxTree
 
   class Defs
     def to_parser
-      args =
-        case params
-        in Params => node then node
-        in Paren[contents: Params => node] then node
-        end
-
-      SyntaxTree.n(:defs, [target.to_parser, name.value.to_sym, SyntaxTree.n(:args, args.to_parser_children), bodystmt.to_parser])
+      args = (params in Params) ? params : params.contents
+      SyntaxTree.n(:defs, [target.to_parser, name.value.to_sym, args.to_parser, bodystmt.to_parser])
     end
   end
 
@@ -318,13 +309,13 @@ module SyntaxTree
 
   class Dot2
     def to_parser
-      SyntaxTree.n(:irange, [left.to_parser, right.to_parser])
+      SyntaxTree.n(:irange, [left&.to_parser, right&.to_parser])
     end
   end
 
   class Dot3
     def to_parser
-      SyntaxTree.n(:erange, [left.to_parser, right.to_parser])
+      SyntaxTree.n(:erange, [left&.to_parser, right&.to_parser])
     end
   end
 
@@ -482,7 +473,7 @@ module SyntaxTree
 
   class KwRestParam
     def to_parser
-      SyntaxTree.n(:kwrestarg, [name.value.to_sym])
+      SyntaxTree.n(:kwrestarg, [name&.value&.to_sym])
     end
   end
 
@@ -495,7 +486,7 @@ module SyntaxTree
   class Lambda
     def to_parser
       args = (params in Params) ? params : params.contents
-      SyntaxTree.n(:block, [SyntaxTree.n(:send, [nil, :lambda]), SyntaxTree.n(:args, args.to_parser_children), statements.to_parser])
+      SyntaxTree.n(:block, [SyntaxTree.n(:send, [nil, :lambda]), args.to_parser, statements.to_parser])
     end
   end
 
@@ -564,7 +555,7 @@ module SyntaxTree
   end
 
   class Params
-    def to_parser_children
+    def to_parser
       children = []
 
       children +=
@@ -586,16 +577,34 @@ module SyntaxTree
           value ? SyntaxTree.n(:kwoptarg, [key, value.to_parser]) : SyntaxTree.n(:kwarg, [key])
         end
 
-      children << keyword_rest.to_parser if keyword_rest
+      children << keyword_rest.to_parser if keyword_rest && !(keyword_rest in ArgsForward)
       children << block.to_parser if block
+      
+      if (keyword_rest in ArgsForward)
+        return SyntaxTree.n(:forward_args) if children.empty?
 
-      children
+        children.insert(requireds.length + optionals.length + keywords.length, SyntaxTree.n(:forward_arg))
+      end
+
+      SyntaxTree.n(:args, children)
     end
   end
 
   class Paren
     def to_parser
       SyntaxTree.n(:begin, [contents.to_parser])
+    end
+  end
+
+  class PinnedBegin
+    def to_parser
+      SyntaxTree.n(:pin, [statement.to_parser])
+    end
+  end
+
+  class PinnedVarRef
+    def to_parser
+      SyntaxTree.n(:pin, [value.to_parser])
     end
   end
 
@@ -660,7 +669,7 @@ module SyntaxTree
 
   class RestParam
     def to_parser
-      SyntaxTree.n(:restarg, [name.value.to_sym])
+      SyntaxTree.n(:restarg, [name&.value&.to_sym])
     end
   end
 
@@ -737,6 +746,8 @@ module SyntaxTree
   class Super
     def to_parser
       case arguments
+      in ArgParen[arguments: nil]
+        SyntaxTree.n(:super)
       in ArgParen[arguments: { parts: }]
         SyntaxTree.n(:super, parts.map(&:to_parser))
       in Args[parts:]
@@ -755,7 +766,7 @@ module SyntaxTree
     def to_parser
       children =
         elements.map do |element|
-          if element.parts.length > 1
+          if element.parts.length > 1 || !(element.parts.first in TStringContent)
             SyntaxTree.n(:dsym, element.parts.map(&:to_parser))
           else
             SyntaxTree.n(:sym, [element.parts.first.value.to_sym])
@@ -780,7 +791,8 @@ module SyntaxTree
 
   class TStringContent
     def to_parser
-      SyntaxTree.n(:str, [value])
+      children = ::Parser::CurrentRuby.parse("%(#{value})").children
+      SyntaxTree.n(:str, children)
     end
   end
 
@@ -928,6 +940,10 @@ end
 def tree_diff(left, right)
   return if left == right
 
+  if left.is_a?(String) && right.is_a?(String)
+    raise "Expected #{left.inspect} but got #{right.inspect}"
+  end
+
   if left.nil? && !right.nil?
     raise "left is nil, right is #{right.inspect}"
   end
@@ -949,29 +965,55 @@ def tree_diff(left, right)
   end
 end
 
-source = DATA.read
-# source = File.read(__FILE__)
+def test_snippet(source)
+  stree_ast = -> { SyntaxTree.parse(source).to_parser }
+  parser_ast = -> { Parser::CurrentRuby.parse(source) }
 
-stree_ast = -> { SyntaxTree.parse(source).to_parser }
-parser_ast = -> { Parser::CurrentRuby.parse(source) }
+  stree_val = stree_ast.call
+  parser_val = parser_ast.call
 
-stree_val = stree_ast.call
-parser_val = parser_ast.call
+  begin
+    tree_diff(stree_val, parser_val)
+  rescue => error
+    warn(error.message)
+    warn("Expected #{stree_val.inspect} but got #{parser_val.inspect}")
+    exit(1)
+  else
+    pp stree_val
+  end
 
-begin
-  tree_diff(stree_val, parser_val)
-rescue => error
-  warn(error.message)
-  warn("Expected #{stree_val.inspect} but got #{parser_val.inspect}")
-  exit(1)
-else
-  pp stree_val
+  Benchmark.ips do |x|
+    x.report("stree", &stree_ast)
+    x.report("parser", &parser_ast)
+    x.compare!
+  end
 end
 
-Benchmark.ips do |x|
-  x.report("stree", &stree_ast)
-  x.report("parser", &parser_ast)
-  x.compare!
+def test_all
+  delimiter = /%(?: # (.+?))?\n/
+  counts = { pass: 0, fail: 0}
+
+  Dir[File.expand_path("../syntax_tree/test/fixtures/*.rb", __dir__)].each do |filepath|
+    File.readlines(filepath).slice_before(delimiter).each.with_index(1) do |source, index|
+      value, = source.tap(&:shift).join.split("-\n")
+      key =
+        begin
+          tree_diff(SyntaxTree.parse(value).to_parser, Parser::CurrentRuby.parse(value))
+        rescue => error
+          warn("=== Failure on #{File.basename(filepath)} example #{index} ===")
+          warn(error.message)
+          :fail
+        else
+          :pass
+        end
+
+      counts[key] += 1
+    end
+  end
+
+  pp counts
 end
 
-__END__
+# test_snippet("super()")
+# test_snippet(File.read(__FILE__))
+test_all
