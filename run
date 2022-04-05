@@ -7,7 +7,7 @@ gemfile do
   source "https://rubygems.org"
 
   gem "parser", require: "parser/current"
-  gem "syntax_tree"
+  gem "syntax_tree", path: "../syntax_tree"
   gem "benchmark-ips"
 end
 
@@ -52,7 +52,25 @@ module SyntaxTree
 
   class ArrayLiteral
     def to_parser
-      SyntaxTree.n(:array, [*contents.parts.map(&:to_parser)])
+      SyntaxTree.n(:array, contents ? contents.parts.map(&:to_parser) : [])
+    end
+  end
+
+  class AryPtn
+    def to_parser
+      children = requireds.map(&:to_parser)
+
+      case rest
+      in SyntaxTree::VarField[value: nil]
+        children << SyntaxTree.n(:match_rest)
+      in SyntaxTree::VarField[value: { value: }]
+        children << SyntaxTree.n(:match_rest, [SyntaxTree.n(:match_var, [value.to_sym])])
+      else
+      end
+
+      children += posts.map(&:to_parser)
+      node = SyntaxTree.n(:array_pattern, children)
+      constant ? SyntaxTree.n(:const_pattern, [constant.to_parser, node]) : node
     end
   end
 
@@ -177,9 +195,17 @@ module SyntaxTree
     def to_parser
       clauses = [consequent]
       clauses << clauses.last.consequent while clauses.last && !(clauses.last in Else)
+      clauses.map! { |clause| clause&.to_parser }
 
-      type = (clauses.first in When) ? :case : :case_match
-      SyntaxTree.n(type, [value.to_parser, *clauses.map { |clause| clause&.to_parser }])
+      type =
+        case consequent
+        in When then :case
+        in In then :case_match
+        end
+
+      clauses[clauses.length - 1] = SyntaxTree.n(:empty_else) if type == :case_match && clauses.last.nil?
+
+      SyntaxTree.n(type, [value.to_parser, *clauses])
     end
   end
 
@@ -238,9 +264,49 @@ module SyntaxTree
     end
   end
 
+  class Def
+    def to_parser
+      args =
+        case params
+        in Params => node then node
+        in Paren[contents: Params => node] then node
+        end
+
+      SyntaxTree.n(:def, [name.value.to_sym, SyntaxTree.n(:args, args.to_parser_children), bodystmt.to_parser])
+    end
+  end
+
+  class DefEndless
+    def to_parser
+      args =
+        case paren
+        in Params => node then node
+        in Paren[contents: Params => node] then node
+        end
+
+      children = []
+      children << target.to_parser if target
+      children += [name.value.to_sym, SyntaxTree.n(:args, args.to_parser_children), statement.to_parser]
+
+      SyntaxTree.n(target ? :defs : :def, children)
+    end
+  end
+
   class Defined
     def to_parser
       SyntaxTree.n(:defined?, [value.to_parser])
+    end
+  end
+
+  class Defs
+    def to_parser
+      args =
+        case params
+        in Params => node then node
+        in Paren[contents: Params => node] then node
+        end
+
+      SyntaxTree.n(:defs, [target.to_parser, name.value.to_sym, SyntaxTree.n(:args, args.to_parser_children), bodystmt.to_parser])
     end
   end
 
@@ -336,6 +402,36 @@ module SyntaxTree
     end
   end
 
+  class HshPtn
+    def to_parser
+      children =
+        keywords.map do |(keyword, value)|
+          if value.nil?
+            SyntaxTree.n(:match_var, [keyword.value.chomp(":").to_sym])
+          else
+            SyntaxTree.n(:pair, [keyword.to_parser, value.to_parser])
+          end
+        end
+
+      case keyword_rest
+      in SyntaxTree::VarField[value: nil]
+        children << SyntaxTree.n(:match_rest)
+      in SyntaxTree::VarField[value: { value: }]
+        children << SyntaxTree.n(:match_rest, [SyntaxTree.n(:match_var, [value.to_sym])])
+      else
+      end
+
+      node = SyntaxTree.n(:hash_pattern, children)
+      constant ? SyntaxTree.n(:const_pattern, [constant.to_parser, node]) : node
+    end
+  end
+
+  class Ident
+    def to_parser
+      SyntaxTree.n(:lvar, [value.to_sym])
+    end
+  end
+
   class If
     def to_parser
       SyntaxTree.n(:if, [predicate.to_parser, statements.to_parser, consequent&.to_parser])
@@ -362,7 +458,7 @@ module SyntaxTree
 
   class In
     def to_parser
-      SyntaxTree.n(:in_pattern, [pattern.to_parser, statements.to_parser])
+      SyntaxTree.n(:in_pattern, [pattern.to_parser, nil, statements.to_parser])
     end
   end
 
@@ -406,7 +502,31 @@ module SyntaxTree
   class MethodAddBlock
     def to_parser
       statements = (block in BraceBlock) ? block.statements : block.bodystmt
-      SyntaxTree.n(:block, [call.to_parser, block.block_var&.to_parser, statements.to_parser])
+      arguments = block.block_var ? block.block_var.to_parser : SyntaxTree.n(:args)
+
+      SyntaxTree.n(:block, [call.to_parser, arguments, statements.to_parser])
+    end
+  end
+
+  class MLHS
+    def to_parser
+      children =
+        parts.map do |part|
+          case part
+          in Ident[value:]
+            SyntaxTree.n(:arg, [value.to_sym])
+          else
+            part.to_parser
+          end
+        end
+
+      SyntaxTree.n(:mlhs, children)
+    end
+  end
+
+  class MLHSParen
+    def to_parser
+      contents.to_parser
     end
   end
 
@@ -447,7 +567,16 @@ module SyntaxTree
     def to_parser_children
       children = []
 
-      children += requireds.map { |required| SyntaxTree.n(:arg, [required.value.to_sym]) }
+      children +=
+        requireds.map do |required|
+          case required
+          in MLHSParen
+            required.to_parser
+          else
+            SyntaxTree.n(:arg, [required.value.to_sym])
+          end
+        end
+
       children += optionals.map { |(name, value)| SyntaxTree.n(:optarg, [name.value.to_sym, value.to_parser]) }
       children << rest.to_parser if rest && !(rest in ExcessedComma)
       children += posts.map { |post| SyntaxTree.n(:arg, [post.value.to_sym]) }
@@ -561,7 +690,7 @@ module SyntaxTree
 
   class Statements
     def to_parser
-      nodes = body.reject { |node| node in Comment | EmbDoc | VoidStmt }
+      nodes = body.reject { |node| node in Comment | EmbDoc | EndContent | VoidStmt }
 
       case nodes
       in []
@@ -796,7 +925,32 @@ module SyntaxTree
   end
 end
 
+def tree_diff(left, right)
+  return if left == right
+
+  if left.nil? && !right.nil?
+    raise "left is nil, right is #{right.inspect}"
+  end
+
+  if !left.nil? && right.nil?
+    raise "left is #{left.inspect}, right is nil"
+  end
+
+  if left.type != right.type
+    raise "Expected #{left.type} but got #{right.type}"
+  end
+
+  if left.children.length != right.children.length
+    raise "Expected #{left.children.length} children but got #{right.children.length}"
+  end
+
+  left.children.zip(right.children).each do |(left_child, right_child)|
+    tree_diff(left_child, right_child)
+  end
+end
+
 source = DATA.read
+# source = File.read(__FILE__)
 
 stree_ast = -> { SyntaxTree.parse(source).to_parser }
 parser_ast = -> { Parser::CurrentRuby.parse(source) }
@@ -804,8 +958,11 @@ parser_ast = -> { Parser::CurrentRuby.parse(source) }
 stree_val = stree_ast.call
 parser_val = parser_ast.call
 
-if stree_val!= parser_val
-  warn("Expected #{stree_val} to equal #{parser_val}")
+begin
+  tree_diff(stree_val, parser_val)
+rescue => error
+  warn(error.message)
+  warn("Expected #{stree_val.inspect} but got #{parser_val.inspect}")
   exit(1)
 else
   pp stree_val
@@ -818,4 +975,3 @@ Benchmark.ips do |x|
 end
 
 __END__
-1 + 2
