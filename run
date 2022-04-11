@@ -669,7 +669,9 @@ module SyntaxTree
 
   class RestParam
     def to_parser
-      SyntaxTree.n(:restarg, [name&.value&.to_sym])
+      children = []
+      children << name.value.to_sym if name
+      SyntaxTree.n(:restarg, children)
     end
   end
 
@@ -1014,6 +1016,9 @@ def test_all
   pp counts
 end
 
-# test_snippet("super()")
+# test_snippet(<<~RUBY)
+#   def foo(*)
+#   end
+# RUBY
 # test_snippet(File.read(__FILE__))
 test_all
