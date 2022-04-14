@@ -21,9 +21,7 @@ module SyntaxTree
       s(:send, [visit(node.collection), :[], *parts])
     end
 
-    def visit_aref_field(node)
-      raise
-    end
+    alias visit_aref_field visit_aref
 
     def visit_arg_block(node)
       s(:block_pass, [visit(node.value)])
@@ -196,13 +194,11 @@ module SyntaxTree
       s(:const, [nil, node.value.to_sym])
     end
 
-    def visit_const_path_field(node)
-      s(:const, [visit(node.parent), node.constant.value.to_sym])
-    end
-
     def visit_const_path_ref(node)
       s(:const, [visit(node.parent), node.constant.value.to_sym])
     end
+
+    alias visit_const_path_field visit_const_path_ref
 
     def visit_const_ref(node)
       s(:const, [nil, node.constant.value.to_sym])
@@ -438,7 +434,7 @@ module SyntaxTree
     end
 
     def visit_massign(node)
-      raise
+      s(:masgn, [visit(node.target), visit(node.value)])
     end
 
     def visit_method_add_block(node)
@@ -734,13 +730,11 @@ module SyntaxTree
       raise
     end
 
-    def visit_top_const_field(node)
-      s(:const, [s(:cbase), node.constant.value.to_sym])
-    end
-
     def visit_top_const_ref(node)
       s(:const, [s(:cbase), node.constant.value.to_sym])
     end
+
+    alias visit_top_const_field visit_top_const_ref
 
     def visit_tstring_beg(node)
       raise
