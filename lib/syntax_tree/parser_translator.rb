@@ -115,7 +115,14 @@ module SyntaxTree
     end
 
     def visit_binary(node)
-      s(:send, [visit(node.left), node.operator, visit(node.right)])
+      case node.operator
+      when :"&&"
+        s(:and, [visit(node.left), visit(node.right)])
+      when :"||"
+        s(:or, [visit(node.left), visit(node.right)])
+      else
+        s(:send, [visit(node.left), node.operator, visit(node.right)])
+      end
     end
 
     def visit_blockarg(node)
@@ -398,7 +405,7 @@ module SyntaxTree
       when "__FILE__"
         s(:str, [filename])
       when "__LINE__"
-        s(:int, [lineno])
+        s(:int, [node.location.start_line + lineno - 1])
       else
         s(node.value.to_sym)
       end
@@ -418,7 +425,7 @@ module SyntaxTree
 
     def visit_lambda(node)
       args = (node.params in Params) ? node.params : node.params.contents
-      s(:block, [s(:send, [nil, :lambda]), visit(args), visit(node.statements)])
+      s(:block, [s(:lambda), visit(args), visit(node.statements)])
     end
 
     def visit_lbrace(node)
