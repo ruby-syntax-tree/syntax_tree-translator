@@ -508,7 +508,15 @@ module SyntaxTree
           value ? s(:kwoptarg, [key, visit(value)]) : s(:kwarg, [key])
         end
 
-      children << visit(node.keyword_rest) if node.keyword_rest && !(node.keyword_rest in ArgsForward)
+      case node.keyword_rest
+      in nil | ArgsForward
+        # do nothing
+      in :nil
+        children << s(:kwnilarg)
+      else
+        children << visit(node.keyword_rest)
+      end
+
       children << visit(node.block) if node.block
       
       if (node.keyword_rest in ArgsForward)
