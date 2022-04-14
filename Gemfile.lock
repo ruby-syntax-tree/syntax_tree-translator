@@ -2,15 +2,19 @@ GEM
   remote: https://rubygems.org/
   specs:
     ast (2.4.2)
+    minitest (5.15.0)
     parser (3.1.2.0)
       ast (~> 2.4.1)
+    rake (13.0.6)
     syntax_tree (2.1.0)
 
 PLATFORMS
   x86_64-darwin-21
 
 DEPENDENCIES
+  minitest
   parser
+  rake
   syntax_tree
 
 BUNDLED WITH
