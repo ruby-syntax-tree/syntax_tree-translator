@@ -6,7 +6,7 @@ require "syntax_tree/parser_translator"
 require "parser/current"
 
 source = ARGF.read
-visitor = SyntaxTree::ParserTranslator.new("(string)")
+visitor = SyntaxTree::ParserTranslator.new("(string)", 1)
 
 stree = visitor.visit(SyntaxTree.parse(source))
 parser = Parser::CurrentRuby.parse(source)

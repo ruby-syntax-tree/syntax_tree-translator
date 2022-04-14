@@ -13,20 +13,19 @@ module ParseHelper
   def with_versions(*); end
 
   def assert_parses(ast, code, source_maps = "", versions = ALL_VERSIONS)
-    filename = "(string)"
-    expected = parse(filename, code)
+    expected = parse(code)
     return if expected.nil?
 
-    visitor = SyntaxTree::ParserTranslator.new(filename)
+    visitor = SyntaxTree::ParserTranslator.new("(string)", 1)
     actual = visitor.visit(SyntaxTree.parse(code))
     assert_equal(expected, actual)
   end
 
-  def parse(filename, code)
+  def parse(code)
     parser = Parser::CurrentRuby.default_parser
     parser.diagnostics.consumer = ->(*) {}
 
-    buffer = Parser::Source::Buffer.new(filename, 1)
+    buffer = Parser::Source::Buffer.new("(string)", 1)
     buffer.source = code
 
     parser.parse(buffer)

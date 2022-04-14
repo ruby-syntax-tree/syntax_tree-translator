@@ -5,10 +5,11 @@ require "syntax_tree"
 
 module SyntaxTree
   class ParserTranslator < Visitor
-    attr_reader :filename
+    attr_reader :filename, :lineno
 
-    def initialize(filename)
+    def initialize(filename, lineno)
       @filename = filename
+      @lineno = lineno
     end
 
     def visit_alias(node)
@@ -140,9 +141,14 @@ module SyntaxTree
     end
 
     def visit_call(node)
-      children = [visit(node.receiver), node.message.value.to_sym]
-      children += visit_all(node.arguments.arguments.parts) if node.arguments
-      s(send_type(node.operator), children)
+      if node.message == :call
+        args = visit_all(node.arguments.arguments.parts) if node.arguments.arguments
+        s(send_type(node.operator), [visit(node.receiver), :call, *args])
+      else
+        children = [visit(node.receiver), node.message.value.to_sym]
+        children += visit_all(node.arguments.arguments.parts) if node.arguments
+        s(send_type(node.operator), children)
+      end
     end
 
     def visit_case(node)
@@ -395,6 +401,8 @@ module SyntaxTree
       case node.value
       when "__FILE__"
         s(:str, [filename])
+      when "__LINE__"
+        s(:int, [lineno])
       else
         s(node.value.to_sym)
       end
