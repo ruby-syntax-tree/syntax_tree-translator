@@ -13,7 +13,7 @@ module ParseHelper
 
   def assert_parses(ast, code, source_maps = "", versions = ALL_VERSIONS)
     expected = Parser::CurrentRuby.parse(code)
-    actual = SyntaxTree.parse(code).to_parser
+    actual = SyntaxTree::ParserTranslator.new.visit(SyntaxTree.parse(code))
 
     assert_equal(expected, actual)
   end

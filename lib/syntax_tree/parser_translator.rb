@@ -4,846 +4,606 @@ require "parser"
 require "syntax_tree"
 
 module SyntaxTree
-  using Module.new {
-    refine SyntaxTree.singleton_class do
-      def n(type, children = [], opts = {})
-        ::Parser::AST::Node.new(type, children, opts)
-      end
-
-      def send_type(operator)
-        (operator in Op[value: "&."]) ? :csend : :send
-      end
+  class ParserTranslator < Visitor
+    def visit_alias(node)
+      s(:alias, [visit(node.left), visit(node.right)])
     end
-  }
 
-  class Alias
-    def to_parser
-      SyntaxTree.n(:alias, [left.to_parser, right.to_parser])
+    def visit_aref(node)
+      parts = visit_all(node.index ? node.index.parts : [])
+      s(:send, [visit(node.collection), :[], *parts])
     end
-  end
 
-  class ARef
-    def to_parser
-      SyntaxTree.n(:send, [collection.to_parser, :[], *index&.parts&.map(&:to_parser)])
+    def visit_aref_field(node)
+      raise
     end
-  end
 
-  class ARefField
-    def to_parser
-      raise "Skipped because it's implemented in Assign"
+    def visit_arg_block(node)
+      s(:block_pass, [visit(node.value)])
     end
-  end
 
-  class ArgBlock
-    def to_parser
-      SyntaxTree.n(:block_pass, [value&.to_parser])
+    def visit_arg_star(node)
+      s(:splat, [visit(node.value)])
     end
-  end
 
-  class ArgStar
-    def to_parser
-      SyntaxTree.n(:splat, [value.to_parser])
+    def visit_args_forward(node)
+      s(:forward_arg)
     end
-  end
 
-  class ArgsForward
-    def to_parser
-      SyntaxTree.n(:forward_arg)
+    def visit_array(node)
+      s(:array, node.contents ? visit_all(node.contents.parts) : [])
     end
-  end
 
-  class ArrayLiteral
-    def to_parser
-      SyntaxTree.n(:array, contents ? contents.parts.map(&:to_parser) : [])
-    end
-  end
+    def visit_aryptn(node)
+      children = visit_all(node.requireds)
 
-  class AryPtn
-    def to_parser
-      children = requireds.map(&:to_parser)
-
-      case rest
+      case node.rest
       in SyntaxTree::VarField[value: nil]
-        children << SyntaxTree.n(:match_rest)
+        children << s(:match_rest)
       in SyntaxTree::VarField[value: { value: }]
-        children << SyntaxTree.n(:match_rest, [SyntaxTree.n(:match_var, [value.to_sym])])
+        children << s(:match_rest, [s(:match_var, [value.to_sym])])
       else
       end
 
-      children += posts.map(&:to_parser)
-      node = SyntaxTree.n(:array_pattern, children)
-      constant ? SyntaxTree.n(:const_pattern, [constant.to_parser, node]) : node
+      inner = s(:array_pattern, children + visit_all(node.posts))
+      node.constant ? s(:const_pattern, [visit(constant), inner]) : inner
     end
-  end
 
-  class Assign
-    def to_parser
-      case target
+    def visit_assign(node)
+      case node.target
       in ARefField[collection:, index:]
-        SyntaxTree.n(:send, [collection.to_parser, :[]=, *index&.parts&.map(&:to_parser), value.to_parser])
+        parts = index ? visit_all(index.parts) : []
+        s(:send, [visit(collection), :[]=, *parts, visit(node.value)])
       in ConstPathField
-        SyntaxTree.n(:casgn, target.to_parser.children + [value.to_parser])
+        s(:casgn, visit(node.target).children + [visit(node.value)])
       in Field[parent:, operator:, name:]
-        SyntaxTree.n(SyntaxTree.send_type(operator), [parent.to_parser, "#{name.value}=".to_sym, value.to_parser])
+        s(send_type(operator), [visit(parent), "#{name.value}=".to_sym, visit(node.value)])
       in TopConstField
-        SyntaxTree.n(:casgn, target.to_parser.children + [value.to_parser])
+        s(:casgn, visit(node.target).children + [visit(node.value)])
       in VarField[value: CVar]
-        SyntaxTree.n(:cvasgn, target.to_parser.children + [value.to_parser])
+        s(:cvasgn, visit(node.target).children + [visit(node.value)])
       in VarField[value: GVar]
-        SyntaxTree.n(:gvasgn, target.to_parser.children + [value.to_parser])
+        s(:gvasgn, visit(node.target).children + [visit(node.value)])
       in VarField[value: Ident]
-        SyntaxTree.n(:lvasgn, target.to_parser.children + [value.to_parser])
+        s(:lvasgn, visit(node.target).children + [visit(node.value)])
       in VarField[value: IVar]
-        SyntaxTree.n(:ivasgn, target.to_parser.children + [value.to_parser])
+        s(:ivasgn, visit(node.target).children + [visit(node.value)])
       in VarField[value: VarRef]
-        SyntaxTree.n(:lvasgn, target.to_parser.children + [value.to_parser])
+        s(:lvasgn, visit(node.target).children + [visit(node.value)])
       end
     end
-  end
 
-  class Assoc
-    def to_parser
-      SyntaxTree.n(:pair, [key.to_parser, value&.to_parser])
+    def visit_assoc(node)
+      s(:pair, [visit(node.key), visit(node.value)])
     end
-  end
 
-  class AssocSplat
-    def to_parser
-      SyntaxTree.n(:kwsplat, [value.to_parser])
+    def visit_assoc_splat(node)
+      s(:kwsplat, [visit(node.value)])
     end
-  end
 
-  class Backref
-    def to_parser
-      SyntaxTree.n(:nth_ref, [value[1..-1].to_i])
+    def visit_backref(node)
+      s(:nth_ref, [value[1..-1].to_i])
     end
-  end
 
-  class BareAssocHash
-    def to_parser
-      SyntaxTree.n(:hash, [*assocs.map(&:to_parser)])
+    def visit_bare_assoc_hash(node)
+      s(:hash, visit_all(node.assocs))
     end
-  end
 
-  class BEGINBlock
-    def to_parser
-      SyntaxTree.n(:preexe, [statements.to_parser])
+    def visit_BEGIN(node)
+      s(:preexe, [visit(node.statements)])
     end
-  end
 
-  class Begin
-    def to_parser
-      SyntaxTree.n(:kwbegin, [bodystmt.to_parser])
+    def visit_begin(node)
+      s(:kwbegin, [visit(node.bodystmt)])
     end
-  end
 
-  class Binary
-    def to_parser
-      SyntaxTree.n(:send, [left.to_parser, operator, right.to_parser])
+    def visit_binary(node)
+      s(:send, [visit(node.left), node.operator, visit(node.right)])
     end
-  end
 
-  class BlockArg
-    def to_parser
-      SyntaxTree.n(:blockarg, [name&.value&.to_sym])
+    def visit_blockarg(node)
+      s(:blockarg, [node.name&.value&.to_sym])
     end
-  end
 
-  class BlockVar
-    def to_parser
-      children = params.to_parser.children.dup
-
-      locals.each do |local|
-        children << SyntaxTree.n(:shadowarg, [local.value.to_sym])
-      end
-
-      SyntaxTree.n(:args, children)
+    def visit_block_var(node)
+      s(:args, visit(node.params).children + node.locals.map { |local| s(:shadowarg, [local.value.to_sym]) })
     end
-  end
 
-  class BodyStmt
-    def to_parser
-      statements.to_parser
+    def visit_bodystmt(node)
+      visit(node.statements)
     end
-  end
 
-  class BraceBlock
-    def to_parser
-      SyntaxTree.n(:block, [statements.to_parser])
+    def visit_break(node)
+      s(:break, visit_all(node.arguments.parts))
     end
-  end
 
-  class Break
-    def to_parser
-      SyntaxTree.n(:break, arguments.parts.map(&:to_parser))
+    def visit_call(node)
+      children = [visit(node.receiver), node.message.value.to_sym]
+      children += visit_all(node.arguments.arguments.parts) if node.arguments
+      s(send_type(node.operator), children)
     end
-  end
 
-  class Call
-    def to_parser
-      children = [receiver.to_parser, message.value.to_sym]
-      children += arguments.arguments.parts.map(&:to_parser) if arguments
-      SyntaxTree.n(SyntaxTree.send_type(operator), children)
-    end
-  end
-
-  class Case
-    def to_parser
-      clauses = [consequent]
+    def visit_case(node)
+      clauses = [node.consequent]
       clauses << clauses.last.consequent while clauses.last && !(clauses.last in Else)
-      clauses.map! { |clause| clause&.to_parser }
+      clauses.map! { |clause| visit(clause) }
 
       type =
-        case consequent
+        case node.consequent
         in When then :case
         in In then :case_match
         end
 
-      clauses[clauses.length - 1] = SyntaxTree.n(:empty_else) if type == :case_match && clauses.last.nil?
-
-      SyntaxTree.n(type, [value&.to_parser, *clauses])
+      clauses[clauses.length - 1] = s(:empty_else) if type == :case_match && clauses.last.nil?
+      s(type, [visit(node.value)] + clauses)
     end
-  end
 
-  class CHAR
-    def to_parser
-      SyntaxTree.n(:str, [value[1..-1]])
+    def visit_CHAR(node)
+      s(:str, [node.value[1..-1]])
     end
-  end
 
-  class ClassDeclaration
-    def to_parser
-      SyntaxTree.n(:class, [constant.to_parser, superclass&.to_parser, bodystmt.to_parser])
+    def visit_class(node)
+      s(:class, [visit(node.constant), visit(node.superclass), visit(node.bodystmt)])
     end
-  end
 
-  class Command
-    def to_parser
-      SyntaxTree.n(:send, [nil, message.value.to_sym, *arguments.parts.map(&:to_parser)])
+    def visit_command(node)
+      s(:send, [nil, node.message.value.to_sym, *visit_all(node.arguments.parts)])
     end
-  end
 
-  class CommandCall
-    def to_parser
-      children = [receiver.to_parser, message.value.to_sym]
-      children += arguments.parts.map(&:to_parser)
-      SyntaxTree.n(SyntaxTree.send_type(operator), children)
+    def visit_command_call(node)
+      children = [visit(node.receiver), node.message.value.to_sym]
+      children += visit_all(arguments.parts)
+      s(send_type(node.operator), children)
     end
-  end
 
-  class Const
-    def to_parser
-      SyntaxTree.n(:const, [nil, value.to_sym])
+    def visit_const(node)
+      s(:const, [nil, node.value.to_sym])
     end
-  end
 
-  class ConstPathField
-    def to_parser
-      SyntaxTree.n(:const, [parent.to_parser, constant.value.to_sym])
+    def visit_const_path_field(node)
+      s(:const, [visit(node.parent), node.constant.value.to_sym])
     end
-  end
 
-  class ConstPathRef
-    def to_parser
-      SyntaxTree.n(:const, [parent.to_parser, constant.value.to_sym])
+    def visit_const_path_ref(node)
+      s(:const, [visit(node.parent), node.constant.value.to_sym])
     end
-  end
 
-  class ConstRef
-    def to_parser
-      SyntaxTree.n(:const, [nil, constant.value.to_sym])
+    def visit_const_ref(node)
+      s(:const, [nil, node.constant.value.to_sym])
     end
-  end
 
-  class CVar
-    def to_parser
-      SyntaxTree.n(:cvar, [value.to_sym])
+    def visit_cvar(node)
+      s(:cvar, [node.value.to_sym])
     end
-  end
 
-  class Def
-    def to_parser
-      args = (params in Params) ? params : params.contents
-      SyntaxTree.n(:def, [name.value.to_sym, args.to_parser, bodystmt.to_parser])
+    def visit_def(node)
+      args = (node.params in Params) ? node.params : node.params.contents
+      s(:def, [node.name.value.to_sym, visit(args), visit(node.bodystmt)])
     end
-  end
 
-  class DefEndless
-    def to_parser
+    def visit_def_endless(node)
       children = []
-      children << target.to_parser if target
+      children << visit(node.target) if node.target
 
-      args = (paren in Params) ? paren : paren.contents
-      children += [name.value.to_sym, args.to_parser, statement.to_parser]
+      args = (node.paren in Params) ? node.paren : node.paren.contents
+      children += [node.name.value.to_sym, visit(args), visit(node.statement)]
 
-      SyntaxTree.n(target ? :defs : :def, children)
+      s(node.target ? :defs : :def, children)
     end
-  end
 
-  class Defined
-    def to_parser
-      SyntaxTree.n(:defined?, [value.to_parser])
+    def visit_defined(node)
+      s(:defined?, [visit(node.value)])
     end
-  end
 
-  class Defs
-    def to_parser
-      args = (params in Params) ? params : params.contents
-      SyntaxTree.n(:defs, [target.to_parser, name.value.to_sym, args.to_parser, bodystmt.to_parser])
+    def visit_defs(node)
+      args = (node.params in Params) ? node.params : node.params.contents
+      s(:defs, [visit(node.target), node.name.value.to_sym, visit(args), visit(node.bodystmt)])
     end
-  end
 
-  class DoBlock
-    def to_parser
-      SyntaxTree.n(:block, [bodystmt.to_parser])
+    def visit_do_block(node)
+      s(:block, [visit(node.bodystmt)])
     end
-  end
 
-  class Dot2
-    def to_parser
-      SyntaxTree.n(:irange, [left&.to_parser, right&.to_parser])
+    def visit_dot2(node)
+      s(:irange, [visit(node.left), visit(node.right)])
     end
-  end
 
-  class Dot3
-    def to_parser
-      SyntaxTree.n(:erange, [left&.to_parser, right&.to_parser])
+    def visit_dot3(node)
+      s(:erange, [visit(node.left), visit(node.right)])
     end
-  end
 
-  class DynaSymbol
-    def to_parser
-      SyntaxTree.n(:dsym, parts.map(&:to_parser))
+    def visit_dyna_symbol(node)
+      s(:dsym, visit_all(node.parts))
     end
-  end
 
-  class Else
-    def to_parser
-      statements.to_parser
+    def visit_else(node)
+      visit(node.statements)
     end
-  end
 
-  class Elsif
-    def to_parser
-      SyntaxTree.n(:if, [predicate.to_parser, statements.to_parser, consequent&.to_parser])
+    def visit_elsif(node)
+      s(:if, [visit(node.predicate), visit(node.statements), visit(node.consequent)])
     end
-  end
 
-  class ENDBlock
-    def to_parser
-      SyntaxTree.n(:postexe, [statements.to_parser])
+    def visit_END(node)
+      s(:postexe, [visit(node.statements)])
     end
-  end
 
-  class FCall
-    def to_parser
-      case arguments
+    def visit_fcall(node)
+      case node.arguments
       in Args[parts: []]
-        SyntaxTree.n(:send, [nil, value.value.to_sym])
+        s(:send, [nil, node.value.value.to_sym])
       in ArgParen[arguments: { parts: }]
-        SyntaxTree.n(:send, [nil, value.value.to_sym, *parts.map(&:to_parser)])
+        s(:send, [nil, node.value.value.to_sym, *visit_all(parts)])
       end
     end
-  end
 
-  class FloatLiteral
-    def to_parser
-      SyntaxTree.n(:float, [value.to_f])
+    def visit_float(node)
+      s(:float, [node.value.to_f])
     end
-  end
 
-  class For
-    def to_parser
-      SyntaxTree.n(:for, [index.to_parser, collection.to_parser, statements.to_parser])
+    def visit_for(node)
+      s(:for, [visit(node.index), visit(node.collection), visit(node.statements)])
     end
-  end
 
-  class GVar
-    def to_parser
-      SyntaxTree.n(:gvar, [value.to_sym])
+    def visit_gvar(node)
+      s(:gvar, [node.value.to_sym])
     end
-  end
 
-  class HashLiteral
-    def to_parser
-      SyntaxTree.n(:hash, assocs.map(&:to_parser))
+    def visit_hash(node)
+      s(:hash, visit_all(node.assocs))
     end
-  end
 
-  class Heredoc
-    def to_parser
+    def visit_heredoc(node)
       segments =
-        parts.flat_map do |part|
-          if (part in TStringContent[value:]) && part.value.count("\n") > 1
-            part.value.split("\n").map { |line| SyntaxTree.n(:str, ["#{line}\n"]) }
+        node.parts.flat_map do |part|
+          if (part in TStringContent[value:]) && value.count("\n") > 1
+            part.value.split("\n").map { |line| s(:str, ["#{line}\n"]) }
           else
-            [part.to_parser]
+            [visit(part)]
           end
         end
 
-      segments.length > 1 ? SyntaxTree.n(:dstr, segments) : segments.first
+      segments.length > 1 ? s(:dstr, segments) : segments.first
     end
-  end
 
-  class HshPtn
-    def to_parser
+    def visit_hshptn(node)
       children =
-        keywords.map do |(keyword, value)|
+        node.keywords.map do |(keyword, value)|
           if value.nil?
-            SyntaxTree.n(:match_var, [keyword.value.chomp(":").to_sym])
+            s(:match_var, [keyword.value.chomp(":").to_sym])
           else
-            SyntaxTree.n(:pair, [keyword.to_parser, value.to_parser])
+            s(:pair, [visit(keyword), visit(value)])
           end
         end
 
-      case keyword_rest
+      case node.keyword_rest
       in SyntaxTree::VarField[value: nil]
-        children << SyntaxTree.n(:match_rest)
+        children << s(:match_rest)
       in SyntaxTree::VarField[value: { value: }]
-        children << SyntaxTree.n(:match_rest, [SyntaxTree.n(:match_var, [value.to_sym])])
+        children << s(:match_rest, [s(:match_var, [value.to_sym])])
       else
       end
 
-      node = SyntaxTree.n(:hash_pattern, children)
-      constant ? SyntaxTree.n(:const_pattern, [constant.to_parser, node]) : node
+      inner = s(:hash_pattern, children)
+      node.constant ? s(:const_pattern, [visit(constant), inner]) : inner
     end
-  end
 
-  class Ident
-    def to_parser
-      SyntaxTree.n(:lvar, [value.to_sym])
+    def visit_ident(node)
+      s(:lvar, [node.value.to_sym])
     end
-  end
 
-  class If
-    def to_parser
-      SyntaxTree.n(:if, [predicate.to_parser, statements.to_parser, consequent&.to_parser])
+    def visit_if(node)
+      s(:if, [visit(node.predicate), visit(node.statements), visit(node.consequent)])
     end
-  end
 
-  class IfMod
-    def to_parser
-      SyntaxTree.n(:if, [predicate.to_parser, statement.to_parser, nil])
+    def visit_if_mod(node)
+      s(:if, [visit(node.predicate), visit(node.statement), nil])
     end
-  end
 
-  class IfOp
-    def to_parser
-      SyntaxTree.n(:if, [predicate.to_parser, truthy.to_parser, falsy.to_parser])
+    def visit_if_op(node)
+      s(:if, [visit(node.predicate), visit(node.truthy), visit(node.falsy)])
     end
-  end
 
-  class Imaginary
-    def to_parser
-      SyntaxTree.n(:complex, [value.to_c])
+    def visit_imaginary(node)
+      s(:complex, [node.value.to_c])
     end
-  end
 
-  class In
-    def to_parser
-      SyntaxTree.n(:in_pattern, [pattern.to_parser, nil, statements.to_parser])
+    def visit_in(node)
+      s(:in_pattern, [visit(node.pattern), nil, [visit(node.statements)]])
     end
-  end
 
-  class Int
-    def to_parser
-      SyntaxTree.n(:int, [value.to_i])
+    def visit_int(node)
+      s(:int, [node.value.to_i])
     end
-  end
 
-  class IVar
-    def to_parser
-      SyntaxTree.n(:ivar, [value.to_sym])
+    def visit_ivar(node)
+      s(:ivar, [node.value.to_sym])
     end
-  end
 
-  class Kw
-    def to_parser
-      SyntaxTree.n(value.to_sym)
+    def visit_kw(node)
+      s(node.value.to_sym)
     end
-  end
 
-  class KwRestParam
-    def to_parser
-      SyntaxTree.n(:kwrestarg, [name&.value&.to_sym])
+    def visit_kwrest_param(node)
+      s(:kwrestarg, [node.name&.value&.to_sym])
     end
-  end
 
-  class Label
-    def to_parser
-      SyntaxTree.n(:sym, [value.chomp(":").to_sym])
+    def visit_label(node)
+      s(:sym, [node.value.chomp(":").to_sym])
     end
-  end
 
-  class Lambda
-    def to_parser
-      args = (params in Params) ? params : params.contents
-      SyntaxTree.n(:block, [SyntaxTree.n(:send, [nil, :lambda]), args.to_parser, statements.to_parser])
+    def visit_lambda(node)
+      args = (node.params in Params) ? node.params : node.params.contents
+      s(:block, [s(:send, [nil, :lambda]), visit(args), visit(node.statements)])
     end
-  end
 
-  class MethodAddBlock
-    def to_parser
-      statements = (block in BraceBlock) ? block.statements : block.bodystmt
-      arguments = block.block_var ? block.block_var.to_parser : SyntaxTree.n(:args)
-
-      SyntaxTree.n(:block, [call.to_parser, arguments, statements.to_parser])
+    def visit_method_add_block(node)
+      statements = (node.block in BraceBlock) ? node.block.statements : node.block.bodystmt
+      arguments = node.block.block_var ? visit(node.block.block_var) : s(:args)
+      s(:block, [visit(node.call), arguments, visit(statements)])
     end
-  end
 
-  class MLHS
-    def to_parser
-      children =
-        parts.map do |part|
-          case part
-          in Ident[value:]
-            SyntaxTree.n(:arg, [value.to_sym])
-          else
-            part.to_parser
-          end
-        end
-
-      SyntaxTree.n(:mlhs, children)
+    def visit_mlhs(node)
+      s(:mlhs, node.parts.map { |part| (part in Ident[value:]) ? s(:arg, [value.to_sym]) : visit(part) })
     end
-  end
 
-  class MLHSParen
-    def to_parser
-      contents.to_parser
+    def visit_mlhs_paren(node)
+      visit(node.contents)
     end
-  end
 
-  class ModuleDeclaration
-    def to_parser
-      SyntaxTree.n(:module, [constant.to_parser, bodystmt.to_parser])
+    def visit_module(node)
+      s(:module, [visit(node.constant), visit(node.bodystmt)])
     end
-  end
 
-  class MRHS
-    def to_parser
-      SyntaxTree.n(:array, parts.map(&:to_parser))
+    def visit_mrhs(node)
+      s(:array, visit_all(node.parts))
     end
-  end
 
-  class Next
-    def to_parser
-      SyntaxTree.n(:next, arguments.parts.map(&:to_parser))
+    def visit_next(node)
+      s(:next, visit_all(node.arguments.parts))
     end
-  end
 
-  class Not
-    def to_parser
-      SyntaxTree.n(:send, [statement.to_parser, :"!"])
+    def visit_not(node)
+      s(:send, [visit(node.statement), :"!"])
     end
-  end
 
-  class OpAssign
-    def to_parser
-      case target
+    def visit_opassign(node)
+      case node.target
       in VarField
-        SyntaxTree.n(:op_asgn, [target.to_parser, operator.value.chomp("=").to_sym, value.to_parser])
+        s(:op_asgn, [visit(node.target), node.operator.value.chomp("=").to_sym, visit(node.value)])
       end
     end
-  end
 
-  class Params
-    def to_parser
+    def visit_params(node)
       children = []
 
       children +=
-        requireds.map do |required|
+        node.requireds.map do |required|
           case required
           in MLHSParen
-            required.to_parser
+            visit(required)
           else
-            SyntaxTree.n(:arg, [required.value.to_sym])
+            s(:arg, [required.value.to_sym])
           end
         end
 
-      children += optionals.map { |(name, value)| SyntaxTree.n(:optarg, [name.value.to_sym, value.to_parser]) }
-      children << rest.to_parser if rest && !(rest in ExcessedComma)
-      children += posts.map { |post| SyntaxTree.n(:arg, [post.value.to_sym]) }
+      children += node.optionals.map { |(name, value)| s(:optarg, [name.value.to_sym, visit(value)]) }
+      children << visit(node.rest) if node.rest && !(node.rest in ExcessedComma)
+      children += node.posts.map { |post| s(:arg, [post.value.to_sym]) }
       children +=
-        keywords.map do |(name, value)|
+        node.keywords.map do |(name, value)|
           key = name.value.chomp(":").to_sym
-          value ? SyntaxTree.n(:kwoptarg, [key, value.to_parser]) : SyntaxTree.n(:kwarg, [key])
+          value ? s(:kwoptarg, [key, visit(value)]) : s(:kwarg, [key])
         end
 
-      children << keyword_rest.to_parser if keyword_rest && !(keyword_rest in ArgsForward)
-      children << block.to_parser if block
+      children << visit(node.keyword_rest) if node.keyword_rest && !(node.keyword_rest in ArgsForward)
+      children << visit(node.block) if node.block
       
-      if (keyword_rest in ArgsForward)
-        return SyntaxTree.n(:forward_args) if children.empty?
+      if (node.keyword_rest in ArgsForward)
+        return s(:forward_args) if children.empty?
 
-        children.insert(requireds.length + optionals.length + keywords.length, SyntaxTree.n(:forward_arg))
+        children.insert(node.requireds.length + node.optionals.length + node.keywords.length, s(:forward_arg))
       end
 
-      SyntaxTree.n(:args, children)
+      s(:args, children)
     end
-  end
 
-  class Paren
-    def to_parser
-      SyntaxTree.n(:begin, [contents.to_parser])
+    def visit_paren(node)
+      s(:begin, [visit(node.contents)])
     end
-  end
 
-  class PinnedBegin
-    def to_parser
-      SyntaxTree.n(:pin, [statement.to_parser])
+    def visit_pinned_begin(node)
+      s(:pin, [visit(node.statement)])
     end
-  end
 
-  class PinnedVarRef
-    def to_parser
-      SyntaxTree.n(:pin, [value.to_parser])
+    def visit_pinned_var_ref(node)
+      s(:pin, [visit(node.value)])
     end
-  end
 
-  class Program
-    def to_parser
-      statements.to_parser
+    def visit_program(node)
+      visit(node.statements)
     end
-  end
 
-  class QSymbols
-    def to_parser
-      SyntaxTree.n(:array, elements.map { |element| SyntaxTree.n(:sym, [element.value.to_sym]) })
+    def visit_qsymbols(node)
+      s(:array, node.elements.map { |element| s(:sym, [element.value.to_sym]) })
     end
-  end
 
-  class QWords
-    def to_parser
-      SyntaxTree.n(:array, elements.map(&:to_parser))
+    def visit_qwords(node)
+      s(:array, visit_all(node.elements))
     end
-  end
 
-  class RAssign
-    def to_parser
+    def visit_rassign(node)
       child =
-        case pattern
+        case node.pattern
         in VarField
-          SyntaxTree.n(:match_var, [pattern.value.value.to_sym])
+          s(:match_var, [node.pattern.value.value.to_sym])
         else
-          pattern.to_parser
+          visit(node.pattern)
         end
 
-      SyntaxTree.n(:match_pattern_p, [value.to_parser, child])
+      s(:match_pattern_p, [visit(node.value), child])
     end
-  end
 
-  class RationalLiteral
-    def to_parser
-      SyntaxTree.n(:rational, [value.to_r])
+    def visit_rational(node)
+      s(:rational, [node.value.to_r])
     end
-  end
 
-  class Redo
-    def to_parser
-      SyntaxTree.n(:redo)
+    def visit_redo(node)
+      s(:redo)
     end
-  end
 
-  class RegexpLiteral
-    def to_parser
-      children = parts.map(&:to_parser)
-      children << SyntaxTree.n(:regopt, ending.scan(/[a-z]/).sort.map(&:to_sym))
-
-      SyntaxTree.n(:regexp, children)
+    def visit_regexp_literal(node)
+      children = visit_all(node.parts)
+      children << s(:regopt, node.ending.scan(/[a-z]/).sort.map(&:to_sym))
+      s(:regexp, children)
     end
-  end
 
-  class RescueMod
-    def to_parser
-      SyntaxTree.n(:rescue, [statement.to_parser, SyntaxTree.n(:resbody, [nil, nil, value.to_parser]), nil])
+    def visit_rescue_mod(node)
+      s(:rescue, [visit(node.statement), s(:resbody, [nil, nil, visit(node.value)]), nil])
     end
-  end
 
-  class RestParam
-    def to_parser
-      children = []
-      children << name.value.to_sym if name
-      SyntaxTree.n(:restarg, children)
+    def visit_rest_param(node)
+      s(:restarg, node.name ? [node.name.value.to_sym] : [])
     end
-  end
 
-  class Retry
-    def to_parser
-      SyntaxTree.n(:retry)
+    def visit_retry(node)
+      s(:retry)
     end
-  end
 
-  class Return
-    def to_parser
-      SyntaxTree.n(:return, arguments.parts.map(&:to_parser))
+    def visit_return(node)
+      s(:return, visit_all(node.arguments.parts))
     end
-  end
 
-  class Return0
-    def to_parser
-      SyntaxTree.n(:return)
+    def visit_return0(node)
+      s(:return)
     end
-  end
 
-  class SClass
-    def to_parser
-      SyntaxTree.n(:sclass, [target.to_parser, bodystmt.to_parser])
+    def visit_sclass(node)
+      s(:sclass, [visit(node.target), visit(node.bodystmt)])
     end
-  end
 
-  class Statements
-    def to_parser
-      nodes = body.reject { |node| node in Comment | EmbDoc | EndContent | VoidStmt }
+    def visit_statements(node)
+      children = node.body.reject { |child| child in Comment | EmbDoc | EndContent | VoidStmt }
 
-      case nodes
+      case children
       in []
         nil
       in [statement]
-        statement.to_parser
+        visit(statement)
       else
-        SyntaxTree.n(:begin, nodes.map(&:to_parser))
+        s(:begin, visit_all(children))
       end
     end
-  end
 
-  class StringConcat
-    def to_parser
-      SyntaxTree.n(:dstr, [left.to_parser, right.to_parser])
+    def visit_string_concat(node)
+      s(:dstr, [visit(node.left), visit(node.right)])
     end
-  end
 
-  class StringDVar
-    def to_parser
-      variable.to_parser
+    def visit_string_dvar(node)
+      visit(node.variable)
     end
-  end
 
-  class StringEmbExpr
-    def to_parser
-      child = statements.to_parser
-      SyntaxTree.n(:begin, child ? [child] : [])
+    def visit_string_embexpr(node)
+      child = visit(node.statements)
+      s(:begin, child ? [child] : [])
     end
-  end
 
-  class StringLiteral
-    def to_parser
-      if parts.length > 1
-        SyntaxTree.n(:dstr, parts.map(&:to_parser))
-      elsif parts.length == 1
-        parts.first.to_parser
+    def visit_string_literal(node)
+      if node.parts.length > 1
+        s(:dstr, visit_all(node.parts))
+      elsif node.parts.length == 1
+        visit(node.parts.first)
       else
-        SyntaxTree.n(:str, [""])
+        s(:str, [""])
       end
     end
-  end
 
-  class Super
-    def to_parser
-      case arguments
+    def visit_super(node)
+      case node.arguments
       in ArgParen[arguments: nil]
-        SyntaxTree.n(:super)
+        s(:super)
       in ArgParen[arguments: { parts: }]
-        SyntaxTree.n(:super, parts.map(&:to_parser))
+        s(:super, visit_all(parts))
       in Args[parts:]
-        SyntaxTree.n(:super, parts.map(&:to_parser))
+        s(:super, visit_all(parts))
       end
     end
-  end
 
-  class SymbolLiteral
-    def to_parser
-      SyntaxTree.n(:sym, [value.value.to_sym])
+    def visit_symbol_literal(node)
+      s(:sym, [node.value.value.to_sym])
     end
-  end
 
-  class Symbols
-    def to_parser
+    def visit_symbols(node)
       children =
-        elements.map do |element|
+        node.elements.map do |element|
           if element.parts.length > 1 || !(element.parts.first in TStringContent)
-            SyntaxTree.n(:dsym, element.parts.map(&:to_parser))
+            s(:dsym, visit_all(element.parts))
           else
-            SyntaxTree.n(:sym, [element.parts.first.value.to_sym])
+            s(:sym, [element.parts.first.value.to_sym])
           end
         end
 
-      SyntaxTree.n(:array, children)
+      s(:array, children)
     end
-  end
 
-  class TopConstField
-    def to_parser
-      SyntaxTree.n(:const, [SyntaxTree.n(:cbase), constant.value.to_sym])
+    def visit_top_const_field(node)
+      s(:const, [s(:cbase), node.constant.value.to_sym])
     end
-  end
 
-  class TopConstRef
-    def to_parser
-      SyntaxTree.n(:const, [SyntaxTree.n(:cbase), constant.value.to_sym])
+    def visit_top_const_ref(node)
+      s(:const, [s(:cbase), node.constant.value.to_sym])
     end
-  end
 
-  class TStringContent
-    def to_parser
-      children = ::Parser::CurrentRuby.parse("%(#{value})").children
-      SyntaxTree.n(:str, children)
+    def visit_tstring_content(node)
+      s(:str, ::Parser::CurrentRuby.parse("%(#{node.value})").children)
     end
-  end
 
-  class Unary
-    def to_parser
-      symbol =
-        case operator
-        when "-" then :"-@"
-        when "+" then :"+@"
-        else
-          operator.to_sym
-        end
-
-      SyntaxTree.n(:send, [statement.to_parser, symbol])
+    def visit_unary(node)
+      case [node.statement, node.operator]
+      in [Int[value:], "+"]
+        s(:int, [value.to_i])
+      in [Int[value:], "-"]
+        s(:int, [-value.to_i])
+      in [Float[value:], "+"]
+        s(:float, [value.to_f])
+      in [Float[value:], "-"]
+        s(:float, [-value.to_f])
+      in [statement, "+"]
+        s(:send, [visit(statement), :"+@"])
+      in [statement, "-"]
+        s(:send, [visit(statement), :"-@"])
+      else
+        s(:send, [visit(node.statement), node.operator.to_sym])
+      end
     end
-  end
 
-  class Undef
-    def to_parser
-      SyntaxTree.n(:undef, symbols.map(&:to_parser))
+    def visit_undef(node)
+      s(:undef, [visit_all(node.symbols)])
     end
-  end
 
-  class Unless
-    def to_parser
-      SyntaxTree.n(:if, [predicate.to_parser, consequent&.to_parser, statements.to_parser])
+    def visit_unless(node)
+      s(:if, [visit(node.predicate), visit(node.consequent), visit(node.statements)])
     end
-  end
 
-  class UnlessMod
-    def to_parser
-      SyntaxTree.n(:if, [predicate.to_parser, nil, statement.to_parser])
+    def visit_unless_mod(node)
+      s(:if, [visit(node.predicate), nil, visit(node.statement)])
     end
-  end
 
-  class Until
-    def to_parser
-      SyntaxTree.n(:until, [predicate.to_parser, statements.to_parser])
+    def visit_until(node)
+      s(:until, [visit(node.predicate), visit(node.statements)])
     end
-  end
 
-  class UntilMod
-    def to_parser
-      SyntaxTree.n(:until, [predicate.to_parser, statement.to_parser])
+    def visit_until_mod(node)
+      s(:until, [visit(node.predicate), visit(node.statement)])
     end
-  end
 
-  class VarAlias
-    def to_parser
-      SyntaxTree.n(:alias, [left.to_parser, right.to_parser])
+    def visit_var_alias(node)
+      s(:alias, [visit(node.left), visit(node.right)])
     end
-  end
 
-  class VarField
-    def to_parser
+    def visit_var_field(node)
       type =
-        case value
+        case node.value
         in CVar then :cvasgn
         in GVar then :gvasgn
         in Ident then :lvasgn
@@ -851,82 +611,70 @@ module SyntaxTree
         in VarRef then :lvasgn
         end
 
-      SyntaxTree.n(type, [value.value.to_sym])
+      s(type, [node.value.value.to_sym])
     end
-  end
 
-  class VarRef
-    def to_parser
-      value.to_parser
+    def visit_var_ref(node)
+      visit(node.value)
     end
-  end
 
-  class VCall
-    def to_parser
-      SyntaxTree.n(:send, [nil, value.value.to_sym])
+    def visit_vcall(node)
+      s(:send, [nil, node.value.value.to_sym])
     end
-  end
 
-  class When
-    def to_parser
-      SyntaxTree.n(:when, [*arguments.parts.map(&:to_parser), statements.to_parser])
+    def visit_when(node)
+      s(:when, visit_all(node.arguments.parts) + [visit(node.statements)])
     end
-  end
 
-  class While
-    def to_parser
-      SyntaxTree.n(:while, [predicate.to_parser, statements.to_parser])
+    def visit_while(node)
+      s(:while, [visit(node.predicate), visit(node.statements)])
     end
-  end
 
-  class WhileMod
-    def to_parser
-      SyntaxTree.n(:while, [predicate.to_parser, statement.to_parser])
+    def visit_while_mod(node)
+      s(:while, [visit(node.predicate), visit(node.statement)])
     end
-  end
 
-  class Word
-    def to_parser
-      if parts.length > 1
-        SyntaxTree.n(:dstr, parts.map(&:to_parser))
+    def visit_word(node)
+      if node.parts.length > 1
+        s(:dstr, visit_all(node.parts))
       else
-        parts.first.to_parser
+        visit(node.parts.first)
       end
     end
-  end
 
-  class Words
-    def to_parser
-      SyntaxTree.n(:array, elements.map(&:to_parser))
+    def visit_words(node)
+      s(:array, visit_all(node.elements))
     end
-  end
 
-  class XStringLiteral
-    def to_parser
-      SyntaxTree.n(:xstr, parts.map(&:to_parser))
+    def visit_xstring_literal(node)
+      s(:xstr, visit_all(node.parts))
     end
-  end
 
-  class Yield
-    def to_parser
-      case arguments
+    def visit_yield(node)
+      case node.arguments
       in Args[parts:]
-        SyntaxTree.n(:yield, parts.map(&:to_parser))
+        s(:yield, visit_all(parts))
       in Paren[contents: Args[parts:]]
-        SyntaxTree.n(:yield, parts.map(&:to_parser))
+        s(:yield, visit_all(parts))
       end
     end
-  end
 
-  class Yield0
-    def to_parser
-      SyntaxTree.n(:yield)
+    def visit_yield0(node)
+      s(:yield)
     end
-  end
 
-  class ZSuper
-    def to_parser
-      SyntaxTree.n(:zsuper)
+    def visit_zsuper(node)
+      s(:zsuper)
+    end
+
+    private
+
+    def s(type, children = [], opts = {})
+      ::Parser::AST::Node.new(type, children, opts)
+    end
+
+    def send_type(operator)
+      (operator in Op[value: "&."]) ? :csend : :send
     end
   end
 end
