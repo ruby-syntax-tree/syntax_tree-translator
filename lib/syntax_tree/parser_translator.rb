@@ -875,7 +875,8 @@ module SyntaxTree
     end
 
     def visit_until_mod(node)
-      s(:until, [visit(node.predicate), visit(node.statement)])
+      children = [visit(node.predicate), visit(node.statement)]
+      s((node.statement in Begin) ? :until_post : :until, children)
     end
 
     def visit_var_alias(node)
@@ -915,7 +916,8 @@ module SyntaxTree
     end
 
     def visit_while_mod(node)
-      s(:while, [visit(node.predicate), visit(node.statement)])
+      children = [visit(node.predicate), visit(node.statement)]
+      s((node.statement in Begin) ? :while_post : :while, children)
     end
 
     def visit_word(node)
