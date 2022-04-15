@@ -211,7 +211,16 @@ module SyntaxTree
 
     def visit_command_call(node)
       children = [visit(node.receiver), node.message.value.to_sym]
-      children += visit_all(node.arguments.parts)
+
+      case node.arguments
+      in nil
+        # do nothing
+      in Args[parts:]
+        children += visit_all(parts)
+      in ArgParen[arguments: { parts: }]
+        children += visit_all(parts)
+      end
+
       s(send_type(node.operator), children)
     end
 
