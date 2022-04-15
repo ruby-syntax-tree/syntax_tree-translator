@@ -73,6 +73,8 @@ module SyntaxTree
         s(send_type(operator), [visit(parent), "#{name.value}=".to_sym, visit(node.value)])
       in TopConstField
         s(:casgn, visit(node.target).children + [visit(node.value)])
+      in VarField[value: Const]
+        s(:casgn, visit(node.target).children + [visit(node.value)])
       in VarField[value: CVar]
         s(:cvasgn, visit(node.target).children + [visit(node.value)])
       in VarField[value: GVar]
