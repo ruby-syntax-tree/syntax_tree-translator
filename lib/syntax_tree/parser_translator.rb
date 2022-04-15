@@ -410,10 +410,13 @@ module SyntaxTree
     def visit_hshptn(node)
       children =
         node.keywords.map do |(keyword, value)|
-          if value.nil?
+          next s(:pair, [visit(keyword), visit(value)]) if value
+
+          case keyword
+          in Label
             s(:match_var, [keyword.value.chomp(":").to_sym])
-          else
-            s(:pair, [visit(keyword), visit(value)])
+          in StringContent[parts: [TStringContent[value:]]]
+            s(:match_var, [value.to_sym])
           end
         end
 
