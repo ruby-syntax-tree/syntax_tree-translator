@@ -666,6 +666,8 @@ module SyntaxTree
           s(:array, [visit(part)])
         in { exceptions: MRHS[parts:] }
           s(:array, visit_all(parts))
+        else
+          s(:array, [visit(node.exception.exceptions)])
         end
 
       resbody =
