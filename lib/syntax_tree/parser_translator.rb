@@ -150,13 +150,17 @@ module SyntaxTree
     end
 
     def visit_call(node)
-      if node.message == :call
-        args = visit_all(node.arguments.arguments.parts) if node.arguments.arguments
-        s(send_type(node.operator), [visit(node.receiver), :call, *args])
-      else
-        children = [visit(node.receiver), node.message.value.to_sym]
-        children += visit_all(node.arguments.arguments.parts) if node.arguments
-        s(send_type(node.operator), children)
+      type = send_type(node.operator)
+
+      case node
+      in { message: :call, arguments: ArgParen[arguments: nil] }
+        s(type, [visit(node.receiver), :call])
+      in { message: :call, arguments: ArgParen[arguments: { parts: }] }
+        s(type, [visit(node.receiver), :call, *visit_all(parts)])
+      in { arguments: nil | ArgParen[arguments: nil] }
+        s(type, [visit(node.receiver), node.message.value.to_sym])
+      in { arguments: ArgParen[arguments: { parts: }] }
+        s(type, [visit(node.receiver), node.message.value.to_sym, *visit_all(parts)])
       end
     end
 
