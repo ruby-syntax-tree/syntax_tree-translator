@@ -32,7 +32,7 @@ module SyntaxTree
     end
 
     def visit_arg_star(node)
-      s(:splat, [visit(node.value)])
+      s(:splat, node.value ? [visit(node.value)] : [])
     end
 
     def visit_args(node)
@@ -95,7 +95,11 @@ module SyntaxTree
     end
 
     def visit_backref(node)
-      s(:nth_ref, [node.value[1..-1].to_i])
+      if node.value.match?(/^\d+$/)
+        s(:nth_ref, [node.value[1..-1].to_i])
+      else
+        s(:back_ref, [node.value.to_sym])
+      end
     end
 
     def visit_backtick(node)
@@ -201,11 +205,13 @@ module SyntaxTree
       s(:const, [nil, node.value.to_sym])
     end
 
+    def visit_const_path_field(node)
+      s(:casgn, [visit(node.parent), node.constant.value.to_sym])
+    end
+
     def visit_const_path_ref(node)
       s(:const, [visit(node.parent), node.constant.value.to_sym])
     end
-
-    alias visit_const_path_field visit_const_path_ref
 
     def visit_const_ref(node)
       s(:const, [nil, node.constant.value.to_sym])
@@ -373,7 +379,15 @@ module SyntaxTree
     end
 
     def visit_if(node)
-      s(:if, [visit(node.predicate), visit(node.statements), visit(node.consequent)])
+      predicate =
+        case node.predicate
+        in RegexpLiteral
+          s(:match_current_line, [visit(node.predicate)])
+        else
+          visit(node.predicate)
+        end
+
+      s(:if, [predicate, visit(node.statements), visit(node.consequent)])
     end
 
     def visit_if_mod(node)
@@ -737,11 +751,13 @@ module SyntaxTree
       raise
     end
 
+    def visit_top_const_field(node)
+      s(:casgn, [s(:cbase), node.constant.value.to_sym])
+    end
+
     def visit_top_const_ref(node)
       s(:const, [s(:cbase), node.constant.value.to_sym])
     end
-
-    alias visit_top_const_field visit_top_const_ref
 
     def visit_tstring_beg(node)
       raise
@@ -800,6 +816,7 @@ module SyntaxTree
 
     def visit_var_field(node)
       case node.value
+      in Const[value:] then s(:casgn, [nil, value.to_sym])
       in CVar[value:] then s(:cvasgn, [value.to_sym])
       in GVar[value:] then s(:gvasgn, [value.to_sym])
       in Ident[value:] then s(:lvasgn, [value.to_sym])
