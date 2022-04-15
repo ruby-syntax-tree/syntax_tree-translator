@@ -140,7 +140,17 @@ module SyntaxTree
     end
 
     def visit_bodystmt(node)
-      visit(node.statements)
+      inner = visit(node.statements)
+
+      if node.rescue_clause
+        inner = s(:rescue, [inner] + visit(node.rescue_clause).children)
+      end
+
+      if node.ensure_clause
+        inner = s(:ensure, [inner] + visit(node.ensure_clause).children)
+      end
+
+      inner
     end
 
     def visit_brace_block(node)
@@ -300,7 +310,7 @@ module SyntaxTree
     end
 
     def visit_ensure(node)
-      raise
+      s(:ensure, [visit(node.statements)])
     end
 
     def visit_excessed_comma(node)
@@ -646,7 +656,34 @@ module SyntaxTree
     end
 
     def visit_rescue(node)
-      raise
+      exceptions =
+        case node.exception
+        in nil
+          nil
+        in { exceptions: VarRef => part }
+          s(:array, [visit(part)])
+        in { exceptions: MRHS[parts:] }
+          s(:array, visit_all(parts))
+        end
+
+      resbody =
+        case node.exception
+        in nil
+          s(:resbody, [nil, nil, visit(node.statements)])
+        in { variable: nil }
+          s(:resbody, [exceptions, nil, visit(node.statements)])
+        in { variable: VarField => variable }
+          s(:resbody, [exceptions, visit(variable), visit(node.statements)])
+        end
+
+      children = [resbody]
+      if node.consequent
+        children += visit(node.consequent).children
+      else
+        children << nil
+      end
+
+      s(:rescue, children)
     end
 
     def visit_rescue_ex(node)
