@@ -109,7 +109,7 @@ module SyntaxTree
     end
 
     def visit_bare_assoc_hash(node)
-      s(:hash, visit_all(node.assocs))
+      s(:kwargs, visit_all(node.assocs))
     end
 
     def visit_BEGIN(node)
