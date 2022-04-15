@@ -554,7 +554,12 @@ module SyntaxTree
     end
 
     def visit_paren(node)
-      s(:begin, [visit(node.contents)])
+      case node
+      in { contents: Statements[body: [VoidStmt]] }
+        s(:begin)
+      else
+        s(:begin, [visit(node.contents)])
+      end
     end
 
     def visit_period(node)
