@@ -16,12 +16,23 @@ module SyntaxTree
       s(:alias, [visit(node.left), visit(node.right)])
     end
 
-    def visit_aref(node)
-      parts = visit_all(node.index ? node.index.parts : [])
-      s(:send, [visit(node.collection), :[], *parts])
+    def visit_aref_field(node)
+      case node
+      in { index: Args[parts:] }
+        s(:send, [visit(node.collection), :[]] + visit_all(parts))
+      else
+        s(:send, [visit(node.collection), :[], nil])
+      end
     end
 
-    alias visit_aref_field visit_aref
+    def visit_aref(node)
+      case node
+      in { index: Args[parts:] }
+        s(:send, [visit(node.collection), :[]] + visit_all(parts))
+      else
+        s(:send, [visit(node.collection), :[], nil])
+      end
+    end
 
     def visit_arg_block(node)
       s(:block_pass, [visit(node.value)])
@@ -32,7 +43,12 @@ module SyntaxTree
     end
 
     def visit_arg_star(node)
-      s(:splat, node.value ? [visit(node.value)] : [])
+      case node
+      in { value: nil }
+        s(:splat)
+      else
+        s(:splat, [visit(node.value)])
+      end
     end
 
     def visit_args(node)
@@ -44,16 +60,21 @@ module SyntaxTree
     end
 
     def visit_array(node)
-      s(:array, node.contents ? visit_all(node.contents.parts) : [])
+      case node
+      in { contents: nil }
+        s(:array)
+      in { contents: Args[parts:] }
+        s(:array, visit_all(parts))
+      end
     end
 
     def visit_aryptn(node)
       children = visit_all(node.requireds)
 
       case node.rest
-      in SyntaxTree::VarField[value: nil]
+      in VarField[value: nil]
         children << s(:match_rest)
-      in SyntaxTree::VarField[value: { value: }]
+      in VarField[value: { value: }]
         children << s(:match_rest, [s(:match_var, [value.to_sym])])
       else
       end
@@ -121,10 +142,10 @@ module SyntaxTree
     end
 
     def visit_binary(node)
-      case node.operator
-      when :"&&"
+      case node
+      when { operator: :"&&" }
         s(:and, [visit(node.left), visit(node.right)])
-      when :"||"
+      when { operator: :"||" }
         s(:or, [visit(node.left), visit(node.right)])
       else
         s(:send, [visit(node.left), node.operator, visit(node.right)])
@@ -132,7 +153,12 @@ module SyntaxTree
     end
 
     def visit_blockarg(node)
-      s(:blockarg, [node.name&.value&.to_sym])
+      case node
+      in { name: nil }
+        s(:blockarg, [nil])
+      else
+        s(:blockarg, [node.name.value.to_sym])
+      end
     end
 
     def visit_block_var(node)
@@ -392,9 +418,9 @@ module SyntaxTree
         end
 
       case node.keyword_rest
-      in SyntaxTree::VarField[value: nil]
+      in VarField[value: nil]
         children << s(:match_rest)
-      in SyntaxTree::VarField[value: { value: }]
+      in VarField[value: { value: }]
         children << s(:match_rest, [s(:match_var, [value.to_sym])])
       else
       end
