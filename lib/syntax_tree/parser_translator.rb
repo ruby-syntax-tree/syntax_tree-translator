@@ -171,6 +171,8 @@ module SyntaxTree
         s(type, [visit(node.receiver), :call, *visit_all(parts)])
       in { arguments: nil | ArgParen[arguments: nil] }
         s(type, [visit(node.receiver), node.message.value.to_sym])
+      in { arguments: Args[parts:] }
+        s(type, [visit(node.receiver), node.message.value.to_sym, *visit_all(parts)])
       in { arguments: ArgParen[arguments: { parts: }] }
         s(type, [visit(node.receiver), node.message.value.to_sym, *visit_all(parts)])
       end
