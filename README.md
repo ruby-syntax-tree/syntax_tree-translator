@@ -4,6 +4,8 @@ This is a proof-of-concept for translating the AST used by [Syntax Tree](https:/
 
 ## Getting started
 
-To test it out, edit the content at the bottom of the `run` script under the `__END__` to be any Ruby content. The run `./run`.
+To test it out, run the tests with `bundle exec rake`. That will run the `parser` gem's parser tests against the translating visitor. As of the latest commit, it results in:
 
-If the ASTs don't match, it will tell you the error. If they do match, then it will benchmark the two generation paths.
+```
+442 runs, 556 assertions, 110 failures, 17 errors, 0 skips
+```
