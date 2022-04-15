@@ -306,11 +306,13 @@ module SyntaxTree
     end
 
     def visit_fcall(node)
-      case node.arguments
-      in Args[parts: []] | ArgParen[arguments: nil]
+      case node
+      in { arguments: Args[parts: []] | ArgParen[arguments: nil] }
         s(:send, [nil, node.value.value.to_sym])
-      in ArgParen[arguments: { parts: }]
+      in { arguments: ArgParen[arguments: { parts: }] }
         s(:send, [nil, node.value.value.to_sym, *visit_all(parts)])
+      in { arguments: ArgParen[arguments: ArgsForward] }
+        s(:send, [nil, node.value.value.to_sym, s(:forwarded_args)])
       end
     end
 
