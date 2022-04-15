@@ -434,7 +434,12 @@ module SyntaxTree
     end
 
     def visit_kwrest_param(node)
-      s(:kwrestarg, [node.name&.value&.to_sym])
+      case node
+      in { name: nil }
+        s(:kwrestarg)
+      else
+        s(:kwrestarg, [node.name.value.to_sym])
+      end
     end
 
     def visit_label(node)
