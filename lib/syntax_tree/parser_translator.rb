@@ -526,7 +526,14 @@ module SyntaxTree
     end
 
     def visit_in(node)
-      s(:in_pattern, [visit(node.pattern), nil, visit(node.statements)])
+      case node
+      in { pattern: IfMod[predicate:, statement:], statements: }
+        s(:in_pattern, [visit(statement), s(:if_guard, [visit(predicate)]), visit(statements)])
+      in { pattern: UnlessMod[predicate:, statement:], statements: }
+        s(:in_pattern, [visit(statement), s(:unless_guard, [visit(predicate)]), visit(statements)])
+      else
+        s(:in_pattern, [visit(node.pattern), nil, visit(node.statements)])
+      end
     end
 
     def visit_int(node)
