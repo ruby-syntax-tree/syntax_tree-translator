@@ -110,7 +110,12 @@ module SyntaxTree
     end
 
     def visit_assoc(node)
-      s(:pair, [visit(node.key), visit(node.value)])
+      case node
+      in { key:, value: nil }
+        s(:pair, [visit(key), s(:send, [nil, key.value.chomp(":").to_sym])])
+      in { key:, value: }
+        s(:pair, [visit(key), visit(value)])
+      end
     end
 
     def visit_assoc_splat(node)
@@ -130,7 +135,12 @@ module SyntaxTree
     end
 
     def visit_bare_assoc_hash(node)
-      s(:kwargs, visit_all(node.assocs))
+      case node
+      in { assocs: [*, Assoc[value: nil], *] }
+        s(:hash, visit_all(node.assocs))
+      else
+        s(:kwargs, visit_all(node.assocs))
+      end
     end
 
     def visit_BEGIN(node)
