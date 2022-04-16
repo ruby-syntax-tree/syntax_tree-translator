@@ -179,7 +179,14 @@ module SyntaxTree
       inner = visit(node.statements)
 
       if node.rescue_clause
-        inner = s(:rescue, [inner] + visit(node.rescue_clause).children)
+        children = [inner] + visit(node.rescue_clause).children
+
+        if node.else_clause
+          children.pop
+          children << visit(node.else_clause)
+        end
+
+        inner = s(:rescue, children)
       end
 
       if node.ensure_clause
