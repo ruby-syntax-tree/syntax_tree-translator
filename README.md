@@ -7,5 +7,5 @@ This is a proof-of-concept for translating the AST used by [Syntax Tree](https:/
 To test it out, run the tests with `bundle exec rake`. That will run the `parser` gem's parser tests against the translating visitor. As of the latest commit, it results in:
 
 ```
-442 runs, 606 assertions, 77 failures, 1 errors, 0 skips
+442 runs, 606 assertions, 76 failures, 1 errors, 0 skips
 ```

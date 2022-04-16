@@ -143,8 +143,10 @@ module SyntaxTree
 
     def visit_assoc(node)
       case node
-      in { key:, value: nil }
+      in { key:, value: nil } if key.value.start_with?(/[a-z]/)
         s(:pair, [visit(key), s(:send, [nil, key.value.chomp(":").to_sym])])
+      in { key:, value: nil } if key.value.start_with?(/[A-Z]/)
+        s(:pair, [visit(key), s(:const, [nil, key.value.chomp(":").to_sym])])
       in { key:, value: }
         s(:pair, [visit(key), visit(value)])
       end
