@@ -924,7 +924,7 @@ module SyntaxTree
     end
 
     def visit_tstring_content(node)
-      s(:str, ::Parser::CurrentRuby.parse("%(#{node.value})").children)
+      s(:str, ["\"#{node.value}\"".undump])
     end
 
     def visit_tstring_end(node)
