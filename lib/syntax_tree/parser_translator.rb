@@ -474,7 +474,10 @@ module SyntaxTree
     end
 
     def visit_imaginary(node)
-      s(:complex, [node.value.to_c])
+      # We have to do an eval here in order to get the value in case it's
+      # something like 42ri. to_c will not give the right value in that case.
+      # Maybe there's an API for this but I can't find it.
+      s(:complex, [eval(node.value)])
     end
 
     def visit_in(node)
