@@ -185,22 +185,22 @@ module SyntaxTree
 
     def visit_binary(node)
       case node
-      when { operator: :"&&" }
+      in { operator: :| }
+        current = -2
+        current -= 1 while (stack[current] in Binary[operator: :|])
+
+        if stack[current] in In
+          s(:match_alt, [visit(node.left), visit(node.right)])
+        else
+          s(:send, [visit(node.left), node.operator, visit(node.right)])
+        end
+      in { operator: :"=>", right: VarField[value: { value: }] }
+        s(:match_as, [visit(node.left), s(:match_var, [value.to_sym])])
+      in { operator: :"&&" }
         s(:and, [visit(node.left), visit(node.right)])
-      when { operator: :"||" }
+      in { operator: :"||" }
         s(:or, [visit(node.left), visit(node.right)])
       else
-        if node.operator == :|
-          # For some reason, this isn't getting triggered when it's in the
-          # pattern match. Going to need to look into why that is.
-          current = -2
-          current -= 1 while (stack[current] in Binary[operator: :|])
-
-          if stack[current] in In
-            return s(:match_alt, [visit(node.left), visit(node.right)])
-          end
-        end
-
         s(:send, [visit(node.left), node.operator, visit(node.right)])
       end
     end
