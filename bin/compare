@@ -7,6 +7,8 @@ $:.unshift(File.expand_path("../lib", __dir__))
 require "syntax_tree/parser_translator"
 require "parser/current"
 
+Parser::Builders::Default.emit_index = true
+
 source = ARGF.read
 visitor = SyntaxTree::ParserTranslator.new("(string)", 1)
 

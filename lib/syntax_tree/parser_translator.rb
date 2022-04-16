@@ -31,20 +31,38 @@ module SyntaxTree
     end
 
     def visit_aref_field(node)
+      type = :send
+      children = [visit(node.collection)]
+
+      if ::Parser::Builders::Default.emit_index
+        type = :indexasgn
+      else
+        children << :[]=
+      end
+
       case node
       in { index: Args[parts:] }
-        s(:send, [visit(node.collection), :[]] + visit_all(parts))
+        s(type, children + visit_all(parts))
       else
-        s(:send, [visit(node.collection), :[], nil])
+        s(type, children + [nil])
       end
     end
 
     def visit_aref(node)
+      type = :send
+      children = [visit(node.collection)]
+
+      if ::Parser::Builders::Default.emit_index
+        type = :index
+      else
+        children << :[]
+      end
+
       case node
       in { index: Args[parts:] }
-        s(:send, [visit(node.collection), :[]] + visit_all(parts))
+        s(type, children + visit_all(parts))
       else
-        s(:send, [visit(node.collection), :[], nil])
+        s(type, children + [nil])
       end
     end
 
@@ -100,8 +118,8 @@ module SyntaxTree
     def visit_assign(node)
       case node.target
       in ARefField[collection:, index:]
-        parts = index ? visit_all(index.parts) : []
-        s(:send, [visit(collection), :[]=, *parts, visit(node.value)])
+        target = visit(node.target)
+        s(target.type, target.children + [visit(node.value)])
       in ConstPathField
         s(:casgn, visit(node.target).children + [visit(node.value)])
       in Field[parent:, operator:, name:]

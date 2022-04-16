@@ -42,7 +42,7 @@ module ParseHelper
 
   def parse(code)
     # Skip parsing if any of the non-default options are set.
-    %i[lambda procarg0 encoding index arg_inside_procarg0 forward_arg kwargs match_pattern].each do |option|
+    %i[lambda procarg0 encoding arg_inside_procarg0 forward_arg kwargs match_pattern].each do |option|
       return unless Parser::Builders::Default.public_send(:"emit_#{option}")
     end
 
