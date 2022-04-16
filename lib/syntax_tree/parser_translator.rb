@@ -7,9 +7,23 @@ module SyntaxTree
   class ParserTranslator < Visitor
     attr_reader :filename, :lineno
 
+    # We keep a stack of nodes that we're visiting so that when nodes are being
+    # translated they can look up their parents. This is necessary because the
+    # parser gem changes the names of some nodes depending on their context.
+    attr_reader :stack
+
     def initialize(filename, lineno)
       @filename = filename
       @lineno = lineno
+
+      @stack = []
+    end
+
+    def visit(node)
+      stack << node
+      result = super
+      stack.pop
+      result
     end
 
     def visit_alias(node)
@@ -158,6 +172,17 @@ module SyntaxTree
       when { operator: :"||" }
         s(:or, [visit(node.left), visit(node.right)])
       else
+        if node.operator == :|
+          # For some reason, this isn't getting triggered when it's in the
+          # pattern match. Going to need to look into why that is.
+          current = -2
+          current -= 1 while (stack[current] in Binary[operator: :|])
+
+          if stack[current] in In
+            return s(:match_alt, [visit(node.left), visit(node.right)])
+          end
+        end
+
         s(:send, [visit(node.left), node.operator, visit(node.right)])
       end
     end
