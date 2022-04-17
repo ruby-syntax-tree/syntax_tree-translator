@@ -1,4 +1,4 @@
-# SyntaxTree::ParserTranslator
+# SyntaxTree::Translator
 
 This is a proof-of-concept for translating the AST used by [Syntax Tree](https://github.com/ruby-syntax-tree/syntax_tree) into the AST used by [parser](https://github.com/whitequark/parser).
 

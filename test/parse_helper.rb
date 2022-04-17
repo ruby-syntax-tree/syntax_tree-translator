@@ -35,7 +35,7 @@ module ParseHelper
     expected = parse(code)
     return if expected.nil?
 
-    visitor = SyntaxTree::ParserTranslator.new("(string)", 1)
+    visitor = SyntaxTree::Translator::Parser.new("(string)", 1)
     actual = visitor.visit(SyntaxTree.parse(code))
     assert_equal(expected, actual)
   end
