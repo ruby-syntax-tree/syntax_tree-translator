@@ -501,6 +501,10 @@ module SyntaxTree
     def visit_if(node)
       predicate =
         case node.predicate
+        in Dot2
+          s(:iflipflop, visit(node.predicate).children)
+        in Dot3
+          s(:eflipflop, visit(node.predicate).children)
         in RegexpLiteral
           s(:match_current_line, [visit(node.predicate)])
         else
@@ -941,18 +945,22 @@ module SyntaxTree
     end
 
     def visit_unary(node)
-      case [node.statement, node.operator]
-      in [Int[value:], "+"]
+      case node
+      in { statement: Paren[contents: Statements[body: [Dot2 => contents]]], operator: "!" }
+        s(:send, [s(:begin, [s(:iflipflop, visit(contents).children)]), :"!"])
+      in { statement: Paren[contents: Statements[body: [Dot3 => contents]]], operator: "!" }
+        s(:send, [s(:begin, [s(:eflipflop, visit(contents).children)]), :"!"])
+      in { statement: Int[value:], operator: "+" }
         s(:int, [value.to_i])
-      in [Int[value:], "-"]
+      in { statement: Int[value:], operator: "-" }
         s(:int, [-value.to_i])
-      in [FloatLiteral[value:], "+"]
+      in { statement: FloatLiteral[value:], operator: "+" }
         s(:float, [value.to_f])
-      in [FloatLiteral[value:], "-"]
+      in { statement: FloatLiteral[value:], operator: "-" }
         s(:float, [-value.to_f])
-      in [statement, "+"]
+      in { statement:, operator: "+" }
         s(:send, [visit(statement), :"+@"])
-      in [statement, "-"]
+      in { statement:, operator: "-" }
         s(:send, [visit(statement), :"-@"])
       else
         s(:send, [visit(node.statement), node.operator.to_sym])
