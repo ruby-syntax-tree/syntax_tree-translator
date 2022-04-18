@@ -285,7 +285,6 @@ module SyntaxTree
           in In then :case_match
           end
 
-        clauses[clauses.length - 1] = s(:empty_else) if type == :case_match && clauses.last.nil?
         s(type, [visit(node.value)] + clauses)
       end
 
@@ -795,7 +794,7 @@ module SyntaxTree
       def visit_rescue(node)
         exceptions =
           case node.exception
-          in nil
+          in nil | { exceptions: nil }
             nil
           in { exceptions: VarRef => part }
             s(:array, [visit(part)])
