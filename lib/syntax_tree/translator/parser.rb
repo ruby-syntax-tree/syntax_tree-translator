@@ -694,6 +694,8 @@ module SyntaxTree
 
       def visit_lambda(node)
         args = (node.params in Params) ? node.params : node.params.contents
+
+        arguments = visit(args)
         child =
           if ::Parser::Builders::Default.emit_lambda
             s(:lambda)
@@ -701,7 +703,13 @@ module SyntaxTree
             s(:send, [nil, :lambda])
           end
 
-        s(:block, [child, visit(args), visit(node.statements)])
+        type = :block
+        if args.empty? && (maximum = num_block_type(node.statements))
+          type = :numblock
+          arguments = maximum
+        end
+
+        s(type, [child, arguments, visit(node.statements)])
       end
 
       def visit_lbrace(node)
@@ -735,11 +743,17 @@ module SyntaxTree
             s(:args)
           end
 
+        type = :block
+        if !node.block.block_var && (maximum = num_block_type(statements))
+          type = :numblock
+          arguments = maximum
+        end
+
         if node.call in Break | Next | Return
           call = visit(node.call)
-          s(call.type, [s(:block, [*call.children, arguments, visit(statements)])])
+          s(call.type, [s(type, [*call.children, arguments, visit(statements)])])
         else
-          s(:block, [visit(node.call), arguments, visit(statements)])
+          s(type, [visit(node.call), arguments, visit(statements)])
         end
       end
 
@@ -1237,6 +1251,23 @@ module SyntaxTree
       end
 
       private
+
+      # We need to find if we should transform this block into a numblock
+      # since there could be new numbered variables like _1.
+      def num_block_type(statements)
+        variables = []
+        queue = [statements]
+
+        while child_node = queue.shift
+          if (child_node in VarRef[value: Ident[value:]]) && (value =~ /^_(\d+)$/)
+            variables << $1.to_i
+          end
+
+          queue += child_node.child_nodes.compact
+        end
+
+        variables.max
+      end
 
       def s(type, children = [], opts = {})
         ::Parser::AST::Node.new(type, children, opts)
