@@ -114,8 +114,8 @@ module SyntaxTree
         case node.rest
         in VarField[value: nil]
           children << s(:match_rest)
-        in VarField[value: { value: }]
-          children << s(:match_rest, [s(:match_var, [value.to_sym])])
+        in VarField
+          children << s(:match_rest, [visit(node.rest)])
         else
         end
 
@@ -186,8 +186,8 @@ module SyntaxTree
           else
             s(:send, [visit(node.left), node.operator, visit(node.right)])
           end
-        in { operator: :"=>", right: VarField[value: { value: }] }
-          s(:match_as, [visit(node.left), s(:match_var, [value.to_sym])])
+        in { operator: :"=>" }
+          s(:match_as, [visit(node.left), visit(node.right)])
         in { operator: :"&&" | :and }
           s(:and, [visit(node.left), visit(node.right)])
         in { operator: :"||" | :or }
@@ -310,8 +310,8 @@ module SyntaxTree
       end
 
       def visit_const_path_field(node)
-        if stack[-2] in MLHS
-          s(:send, [visit(node.parent), :"#{node.constant.value}="])
+        if node in { parent: VarRef[value: Kw[value: "self"]] => parent, constant: Ident[value:] }
+          s(:send, [visit(parent), :"#{value}="])
         else
           s(:casgn, [visit(node.parent), node.constant.value.to_sym])
         end
@@ -438,7 +438,13 @@ module SyntaxTree
       end
 
       def visit_fndptn(node)
-        inner = s(:find_pattern, [visit(node.left), *visit_all(node.values), visit(node.right)])
+        children = [
+          s(:match_rest, (node.left in VarField[value: nil]) ? [] : [visit(node.left)]),
+          *visit_all(node.values),
+          s(:match_rest, (node.right in VarField[value: nil]) ? [] : [visit(node.right)])
+        ]
+
+        inner = s(:find_pattern, children)
         node.constant ? s(:const_pattern, [visit(node.constant), inner]) : inner
       end
 
@@ -527,10 +533,13 @@ module SyntaxTree
         end
 
         heredoc_segments.trim!
+
         if node.beginning.value.match?(/`\w+`\z/)
           s(:xstr, heredoc_segments.segments)
         elsif heredoc_segments.segments.length > 1
           s(:dstr, heredoc_segments.segments)
+        elsif heredoc_segments.segments.empty?
+          s(:dstr)
         else
           heredoc_segments.segments.first
         end
@@ -556,8 +565,10 @@ module SyntaxTree
         case node.keyword_rest
         in VarField[value: nil]
           children << s(:match_rest)
-        in VarField[value: { value: }]
-          children << s(:match_rest, [s(:match_var, [value.to_sym])])
+        in VarField[value: :nil]
+          children << s(:match_nil_pattern)
+        in VarField
+          children << s(:match_rest, [visit(node.keyword_rest)])
         else
         end
 
@@ -681,7 +692,7 @@ module SyntaxTree
             s(:args)
           end
 
-        if node.call in Break | Next
+        if node.call in Break | Next | Return
           call = visit(node.call)
           s(call.type, [s(:block, [*call.children, arguments, visit(statements)])])
         else
@@ -710,7 +721,12 @@ module SyntaxTree
       end
 
       def visit_not(node)
-        s(:send, [visit(node.statement), :"!"])
+        case node
+        in { statement: nil }
+          s(:send, [s(:begin), :"!"])
+        else
+          s(:send, [visit(node.statement), :"!"])
+        end
       end
 
       def visit_op(node)
@@ -812,15 +828,8 @@ module SyntaxTree
       end
 
       def visit_rassign(node)
-        child =
-          case node.pattern
-          in VarField
-            s(:match_var, [node.pattern.value.value.to_sym])
-          else
-            visit(node.pattern)
-          end
-
-        s(:match_pattern_p, [visit(node.value), child])
+        type = (node.operator in Op[value: "=>"]) ? :match_pattern : :match_pattern_p
+        s(type, [visit(node.value), visit(node.pattern)])
       end
 
       def visit_rational(node)
@@ -963,12 +972,13 @@ module SyntaxTree
       end
 
       def visit_string_literal(node)
-        if node.parts.length > 1
-          s(:dstr, visit_all(node.parts))
-        elsif node.parts.length == 1
-          visit(node.parts.first)
-        else
+        case node
+        in { parts: [] }
           s(:str, [""])
+        in { parts: [TStringContent => part] }
+          visit(part)
+        else
+          s(:dstr, visit_all(node.parts))
         end
       end
 
@@ -1033,7 +1043,8 @@ module SyntaxTree
       end
 
       def visit_tstring_content(node)
-        s(:str, ["\"#{node.value}\"".undump])
+        value = node.value.gsub(/([^[:ascii:]])/) { $1.dump[1...-1] }
+        s(:str, ["\"#{value}\"".undump])
       end
 
       def visit_tstring_end(node)
@@ -1089,6 +1100,10 @@ module SyntaxTree
       end
 
       def visit_var_field(node)
+        if stack[-2] in AryPtn | Binary[operator: :"=>"] | FndPtn | HshPtn | In | RAssign
+          return s(:match_var, [node.value.value.to_sym])
+        end
+
         case node.value
         in Const[value:] then s(:casgn, [nil, value.to_sym])
         in CVar[value:] then s(:cvasgn, [value.to_sym])

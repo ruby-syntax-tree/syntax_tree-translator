@@ -5,15 +5,21 @@ module ParseHelper
   ALL_VERSIONS = %w[1.8 1.9 2.0 2.1 2.2 2.3 2.4 2.5 2.6 2.7 3.0 3.1 3.2 mac ios]
 
   KNOWN_FAILURES = [
+    # This is not actually allowed in the CRuby parser but the parser gem thinks
+    # it is allowed.
+    "test_pattern_matching_hash_with_string_keys:9015",
+    "test_pattern_matching_hash_with_string_keys:9026",
+    "test_pattern_matching_hash_with_string_keys:9037",
+
     # Skipping this for now until https://github.com/ruby/ruby/pull/5801 is
     # merged. At that point we'll want to support the more recent ripper events
     # in Syntax Tree and then also find a way to support older versions.
-    "test_send_lambda_args_shadow",
+    "test_send_lambda_args_shadow:3672",
 
     # I think this may be a bug in the parser gem's precedence calculation.
     # Unary plus appears to be parsed as part of the number literal in CRuby,
     # but parser is parsing it as a separate operator.
-    "test_unary_num_pow_precedence"
+    "test_unary_num_pow_precedence:3504"
   ]
 
   private
@@ -25,12 +31,15 @@ module ParseHelper
   def with_versions(*); end
 
   def assert_parses(ast, code, source_maps = "", versions = ALL_VERSIONS)
-    # Skip a set list of tests since we know they are expected to fail.
-    return if KNOWN_FAILURES.include?(caller[0][/`(.+)'/, 1])
-
     # Skip any examples that don't include 3.2 since we're not trying to test
     # older versions.
     return unless versions.include?("3.2")
+
+    # Skip past any known failures.
+    caller(1, 6).each do |line|
+      _, lineno, name = *line.match(/(\d+):in `(.+)'/)
+      return if KNOWN_FAILURES.include?("#{name}:#{lineno}")
+    end
 
     expected = parse(code)
     return if expected.nil?
