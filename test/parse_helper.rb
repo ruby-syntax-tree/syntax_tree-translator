@@ -46,6 +46,10 @@ module ParseHelper
     "test_pattern_matching_single_line_allowed_omission_of_parentheses:9205",
     "test_pattern_matching_single_line_allowed_omission_of_parentheses:9580",
     "test_pattern_matching_single_line_allowed_omission_of_parentheses:9610",
+
+    # I'm not even sure what this is testing, because the code is invalid in
+    # CRuby.
+    "test_control_meta_escape_chars_in_regexp__since_31:*"
   ]
 
   private
@@ -65,6 +69,7 @@ module ParseHelper
     caller(1, 6).each do |line|
       _, lineno, name = *line.match(/(\d+):in `(.+)'/)
       return if KNOWN_FAILURES.include?("#{name}:#{lineno}")
+      return if KNOWN_FAILURES.include?("#{name}:*")
     end
 
     expected = parse(code)
