@@ -177,8 +177,7 @@ module SyntaxTree
       end
 
       def visit_bare_assoc_hash(node)
-        case node
-        in { assocs: [*, Assoc[value: nil], *] }
+        if (node in { assocs: [*, Assoc[value: nil], *] }) || (stack[-2] in ArrayLiteral)
           s(:hash, visit_all(node.assocs))
         else
           s(:kwargs, visit_all(node.assocs))
@@ -190,7 +189,11 @@ module SyntaxTree
       end
 
       def visit_begin(node)
-        s(:kwbegin, [visit(node.bodystmt)])
+        if node.bodystmt.empty?
+          s(:kwbegin)
+        else
+          s(:kwbegin, [visit(node.bodystmt)])
+        end
       end
 
       def visit_binary(node)
@@ -469,20 +472,49 @@ module SyntaxTree
       end
 
       def visit_hash(node)
-        s(:hash, visit_all(node.assocs))
+        if stack[-2] in ArrayLiteral
+          s(:kwargs, visit_all(node.assocs))
+        else
+          s(:hash, visit_all(node.assocs))
+        end
+      end
+
+      class HeredocSegments
+        attr_reader :segments
+
+        def initialize
+          @segments = []
+        end
+
+        def <<(segment)
+          if segment.type == :str && segments.last && segments.last.type == :str && !segments.last.children.first.end_with?("\n")
+            segments.last.children.first << segment.children.first
+          else
+            segments << segment
+          end
+        end
       end
 
       def visit_heredoc(node)
-        segments =
-          node.parts.flat_map do |part|
-            if (part in TStringContent[value:]) && value.count("\n") > 1
-              part.value.split("\n").map { |line| s(:str, ["#{line}\n"]) }
-            else
-              [visit(part)]
-            end
-          end
+        heredoc_segments = HeredocSegments.new
 
-        segments.length > 1 ? s(:dstr, segments) : segments.first
+        node.parts.each do |part|
+          if (part in TStringContent[value:]) && value.count("\n") > 1
+            part.value.split("\n").each do |line|
+              heredoc_segments << s(:str, ["#{line}\n"])
+            end
+          else
+            heredoc_segments << visit(part)
+          end
+        end
+
+        if node.beginning.value.match?(/`\w+`\z/)
+          s(:xstr, heredoc_segments.segments)
+        elsif heredoc_segments.segments.length > 1
+          s(:dstr, heredoc_segments.segments)
+        else
+          heredoc_segments.segments.first
+        end
       end
 
       def visit_heredoc_beg(node)
