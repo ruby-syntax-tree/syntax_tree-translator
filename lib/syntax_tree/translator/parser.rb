@@ -472,6 +472,45 @@ module SyntaxTree
             segments << segment
           end
         end
+
+        HeredocLine = Struct.new(:value, :segments)
+
+        def trim!
+          lines = [HeredocLine.new(+"", [])]
+
+          segments.each do |segment|
+            lines.last.segments << segment
+
+            if segment.type == :str
+              lines.last.value << segment.children.first
+              lines << HeredocLine.new(+"", []) if lines.last.value.end_with?("\n")
+            end
+          end
+
+          lines.pop if lines.last.value.empty?
+          return if lines.empty?
+
+          minimum = lines.first.value.length
+          lines.each do |line|
+            minimum = [minimum, line.value[/^\s*/].length].min
+          end
+
+          segments.clear
+
+          lines.each do |line|
+            remaining = minimum
+
+            line.segments.each do |segment|
+              if segment.type == :str && remaining > 0
+                whitespace = segment.children.first[/^\s{0,#{remaining}}/]
+                segment.children.first.sub!(/^#{whitespace}/, "")
+                remaining -= whitespace.length
+              end
+
+              segments << segment if segment.type != :str || segment.children.first.length > 0
+            end
+          end
+        end
       end
 
       def visit_heredoc(node)
@@ -487,6 +526,7 @@ module SyntaxTree
           end
         end
 
+        heredoc_segments.trim!
         if node.beginning.value.match?(/`\w+`\z/)
           s(:xstr, heredoc_segments.segments)
         elsif heredoc_segments.segments.length > 1
