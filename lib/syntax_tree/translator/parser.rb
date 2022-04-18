@@ -283,15 +283,9 @@ module SyntaxTree
       def visit_case(node)
         clauses = [node.consequent]
         clauses << clauses.last.consequent while clauses.last && !(clauses.last in Else)
-        clauses.map! { |clause| visit(clause) }
 
-        type =
-          case node.consequent
-          in When then :case
-          in In then :case_match
-          end
-
-        s(type, [visit(node.value)] + clauses)
+        type = (node.consequent in In) ? :case_match : :case
+        s(type, [visit(node.value)] + clauses.map { |clause| visit(clause) })
       end
 
       def visit_CHAR(node)
@@ -399,7 +393,11 @@ module SyntaxTree
       end
 
       def visit_else(node)
-        visit(node.statements)
+        if node.statements.empty? && (stack[-2] in Case)
+          s(:empty_else)
+        else
+          visit(node.statements)
+        end
       end
 
       def visit_elsif(node)
@@ -997,7 +995,8 @@ module SyntaxTree
       end
 
       def visit_string_content(node)
-        raise
+        # Can get here if you're inside a hash pattern, e.g., in "a": 1
+        s(:sym, [node.parts.first.value.to_sym])
       end
 
       def visit_string_dvar(node)

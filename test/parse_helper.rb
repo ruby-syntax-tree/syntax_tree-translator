@@ -10,6 +10,9 @@ module ParseHelper
     "test_pattern_matching_hash_with_string_keys:9015",
     "test_pattern_matching_hash_with_string_keys:9026",
     "test_pattern_matching_hash_with_string_keys:9037",
+    "test_pattern_matching_hash_with_string_keys:9059",
+    "test_pattern_matching_hash_with_string_keys:9070",
+    "test_pattern_matching_hash_with_string_keys:9081",
 
     # Skipping this for now until https://github.com/ruby/ruby/pull/5801 is
     # merged. At that point we'll want to support the more recent ripper events
