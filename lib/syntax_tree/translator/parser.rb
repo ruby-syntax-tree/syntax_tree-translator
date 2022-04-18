@@ -74,7 +74,7 @@ module SyntaxTree
       end
 
       def visit_arg_star(node)
-        if stack[-2] in MLHS
+        if stack[-3] in MLHSParen[contents: MLHS]
           case node
           in { value: nil }
             s(:restarg)
@@ -96,7 +96,7 @@ module SyntaxTree
       end
 
       def visit_args_forward(node)
-        s(:forward_arg)
+        s(:forwarded_args)
       end
 
       def visit_array(node)
@@ -109,9 +109,14 @@ module SyntaxTree
       end
 
       def visit_aryptn(node)
+        type = :array_pattern
         children = visit_all(node.requireds)
 
         case node.rest
+        in VarField[value: nil, location: { start_char:, end_char: ^(start_char) }] if node.posts.empty?
+          # Here we have an implicit rest, as in [foo,]. parser has a specific
+          # type for these patterns.
+          type = :array_pattern_with_tail
         in VarField[value: nil]
           children << s(:match_rest)
         in VarField
@@ -119,7 +124,7 @@ module SyntaxTree
         else
         end
 
-        inner = s(:array_pattern, children + visit_all(node.posts))
+        inner = s(type, children + visit_all(node.posts))
         node.constant ? s(:const_pattern, [visit(node.constant), inner]) : inner
       end
 
@@ -808,7 +813,9 @@ module SyntaxTree
         children << visit(node.block) if node.block
         
         if (node.keyword_rest in ArgsForward)
-          return s(:forward_args) if children.empty?
+          if children.empty? && !::Parser::Builders::Default.emit_forward_arg
+            return s(:forward_args)
+          end
 
           children.insert(node.requireds.length + node.optionals.length + node.keywords.length, s(:forward_arg))
         end

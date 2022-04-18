@@ -19,7 +19,21 @@ module ParseHelper
     # I think this may be a bug in the parser gem's precedence calculation.
     # Unary plus appears to be parsed as part of the number literal in CRuby,
     # but parser is parsing it as a separate operator.
-    "test_unary_num_pow_precedence:3504"
+    "test_unary_num_pow_precedence:3504",
+
+    # Not much to be done about this. Basically, regular expressions with named
+    # capture groups that use the =~ operator inject local variables into the
+    # current scope. In the parser gem, it detects this and changes future
+    # references to that name to be a local variable instead of a potential
+    # method call. CRuby does not do this.
+    "test_lvar_injecting_match:3777",
+
+    # These are failing because CRuby is not marking values captures in hash
+    # patterns as local variables, while the parser gem is.
+    "test_pattern_matching_hash:8970",
+    "test_pattern_matching_single_line_allowed_omission_of_parentheses:9205",
+    "test_pattern_matching_single_line_allowed_omission_of_parentheses:9580",
+    "test_pattern_matching_single_line_allowed_omission_of_parentheses:9610",
   ]
 
   private
