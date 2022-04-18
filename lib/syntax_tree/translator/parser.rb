@@ -576,8 +576,6 @@ module SyntaxTree
             s(:iflipflop, visit(node.predicate).children)
           in Dot3
             s(:eflipflop, visit(node.predicate).children)
-          in RegexpLiteral
-            s(:match_current_line, [visit(node.predicate)])
           else
             visit(node.predicate)
           end
@@ -683,9 +681,9 @@ module SyntaxTree
             s(:args)
           end
 
-        if node.call in Break
+        if node.call in Break | Next
           call = visit(node.call)
-          s(:break, [s(:block, [*call.children, arguments, visit(statements)])])
+          s(call.type, [s(:block, [*call.children, arguments, visit(statements)])])
         else
           s(:block, [visit(node.call), arguments, visit(statements)])
         end
@@ -856,7 +854,17 @@ module SyntaxTree
       def visit_regexp_literal(node)
         children = visit_all(node.parts)
         children << s(:regopt, node.ending.scan(/[a-z]/).sort.map(&:to_sym))
-        s(:regexp, children)
+        regexp = s(:regexp, children)
+
+        if stack[-2] in If[predicate: ^(node)] | Unless[predicate: ^(node)]
+          s(:match_current_line, [regexp])
+        elsif stack[-3] in If[predicate: Unary[statement: ^(node), operator: "!"]] | Unless[predicate: Unary[statement: ^(node), operator: "!"]]
+          s(:match_current_line, [regexp])
+        elsif stack[-4] in Program[statements: { body: [*, Unary[statement: ^(node), operator: "!"]] }]
+          s(:match_current_line, [regexp])
+        else
+          regexp
+        end
       end
 
       def visit_rescue(node)
