@@ -170,6 +170,9 @@ module SyntaxTree
       def visit_begin(node)
         if node.bodystmt.empty?
           s(:kwbegin)
+        elsif node.bodystmt in { statements:, rescue_clause: nil, ensure_clause: nil, else_clause: nil }
+          visited = visit(statements)
+          s(:kwbegin, visited.type == :begin ? visited.children : [visited])
         else
           s(:kwbegin, [visit(node.bodystmt)])
         end
@@ -207,7 +210,21 @@ module SyntaxTree
       end
 
       def visit_block_var(node)
-        s(:args, visit(node.params).children + node.locals.map { |local| s(:shadowarg, [local.value.to_sym]) })
+        shadowargs = node.locals.map { |local| s(:shadowarg, [local.value.to_sym]) }
+
+        case node
+        in { params: { requireds: [(Ident | MLHSParen) => required], optionals: [], rest: nil, posts: [], keywords: [], keyword_rest: nil, block: nil } } if ::Parser::Builders::Default.emit_procarg0
+          procarg0 =
+            if ::Parser::Builders::Default.emit_arg_inside_procarg0 && required in Ident
+              s(:procarg0, [s(:arg, [required.value.to_sym])])
+            else
+              s(:procarg0, visit(required).children)
+            end
+
+          s(:args, [procarg0] + shadowargs)
+        else
+          s(:args, visit(node.params).children + shadowargs)
+        end
       end
 
       def visit_bodystmt(node)
@@ -799,10 +816,11 @@ module SyntaxTree
 
       def visit_paren(node)
         case node
-        in { contents: Statements[body: [VoidStmt]] }
+        in { contents: nil | Statements[body: [VoidStmt]] }
           s(:begin)
         else
-          s(:begin, [visit(node.contents)])
+          visited = visit(node.contents)
+          visited.type == :begin ? visited : s(:begin, [visited])
         end
       end
 
@@ -811,7 +829,7 @@ module SyntaxTree
       end
 
       def visit_pinned_begin(node)
-        s(:pin, [visit(node.statement)])
+        s(:pin, [s(:begin, [visit(node.statement)])])
       end
 
       def visit_pinned_var_ref(node)
