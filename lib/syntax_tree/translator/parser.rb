@@ -377,7 +377,7 @@ module SyntaxTree
       end
 
       def visit_do_block(node)
-        s(:block, [visit(node.bodystmt)])
+        raise
       end
 
       def visit_dot2(node)
@@ -664,10 +664,12 @@ module SyntaxTree
 
       def visit_kw(node)
         case node.value
-        when "__FILE__"
+        in "__FILE__"
           s(:str, [filename])
-        when "__LINE__"
+        in "__LINE__"
           s(:int, [node.location.start_line + lineno - 1])
+        in "__ENCODING__" unless ::Parser::Builders::Default.emit_encoding
+          s(:const, [s(:const, [nil, :Encoding]), :UTF_8])
         else
           s(node.value.to_sym)
         end
@@ -692,7 +694,14 @@ module SyntaxTree
 
       def visit_lambda(node)
         args = (node.params in Params) ? node.params : node.params.contents
-        s(:block, [s(:lambda), visit(args), visit(node.statements)])
+        child =
+          if ::Parser::Builders::Default.emit_lambda
+            s(:lambda)
+          else
+            s(:send, [nil, :lambda])
+          end
+
+        s(:block, [child, visit(args), visit(node.statements)])
       end
 
       def visit_lbrace(node)
@@ -823,9 +832,10 @@ module SyntaxTree
       end
 
       def visit_paren(node)
-        case node
-        in { contents: nil | Statements[body: [VoidStmt]] }
+        if node in { contents: nil | Statements[body: [VoidStmt]] }
           s(:begin)
+        elsif stack[-2] in Defs[target: ^(node)]
+          visit(node.contents)
         else
           visited = visit(node.contents)
           visited.type == :begin ? visited : s(:begin, [visited])
@@ -1024,6 +1034,8 @@ module SyntaxTree
         case node.arguments
         in ArgParen[arguments: nil]
           s(:super)
+        in ArgParen[arguments: ArgsForward => arguments]
+          s(:super, [visit(arguments)])
         in ArgParen[arguments: { parts: }]
           s(:super, visit_all(parts))
         in Args[parts:]
