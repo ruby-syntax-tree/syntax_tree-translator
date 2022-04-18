@@ -489,7 +489,10 @@ module SyntaxTree
 
             if segment.type == :str
               lines.last.value << segment.children.first
-              lines << HeredocLine.new(+"", []) if lines.last.value.end_with?("\n")
+
+              if lines.last.value.end_with?("\n")
+                lines << HeredocLine.new(+"", [])
+              end
             end
           end
 
@@ -497,7 +500,8 @@ module SyntaxTree
           return if lines.empty?
 
           minimum = lines.first.value.length
-          lines.each do |line|
+          lines.each_with_index do |line, index|
+            next if index > 0 && lines[index - 1].value.end_with?("\\\n")
             minimum = [minimum, line.value[/^\s*/].length].min
           end
 
@@ -513,7 +517,14 @@ module SyntaxTree
                 remaining -= whitespace.length
               end
 
-              segments << segment if segment.type != :str || segment.children.first.length > 0
+              if segment.type == :str
+                if segments.any? && segments.last.type == :str && segments.last.children.first.end_with?("\\\n")
+                  segments.last.children.first.gsub!(/\\\n\z/, "")
+                  segments.last.children.first.concat(segment.children.first)
+                elsif segment.children.first.length > 0
+                  segments << segment
+                end
+              end
             end
           end
         end
