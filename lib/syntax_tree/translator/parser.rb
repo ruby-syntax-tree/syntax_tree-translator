@@ -488,9 +488,10 @@ module SyntaxTree
       end
 
       class HeredocSegments
-        attr_reader :segments
+        attr_reader :declaration, :segments
 
-        def initialize
+        def initialize(declaration)
+          @declaration = declaration
           @segments = []
         end
 
@@ -505,6 +506,7 @@ module SyntaxTree
         HeredocLine = Struct.new(:value, :segments)
 
         def trim!
+          return unless declaration[2] == "~"
           lines = [HeredocLine.new(+"", [])]
 
           segments.each do |segment|
@@ -541,7 +543,7 @@ module SyntaxTree
               end
 
               if segment.type == :str
-                if segments.any? && segments.last.type == :str && segments.last.children.first.end_with?("\\\n")
+                if declaration[3] != "'" && segments.any? && segments.last.type == :str && segments.last.children.first.end_with?("\\\n")
                   segments.last.children.first.gsub!(/\\\n\z/, "")
                   segments.last.children.first.concat(segment.children.first)
                 elsif segment.children.first.length > 0
@@ -554,7 +556,7 @@ module SyntaxTree
       end
 
       def visit_heredoc(node)
-        heredoc_segments = HeredocSegments.new
+        heredoc_segments = HeredocSegments.new(node.beginning.value)
 
         node.parts.each do |part|
           if (part in TStringContent[value:]) && value.count("\n") > 1
