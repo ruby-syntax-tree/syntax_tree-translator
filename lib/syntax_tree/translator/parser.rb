@@ -80,6 +80,8 @@ module SyntaxTree
             s(:restarg)
           in { value: VarField[value: { value: }]}
             s(:restarg, [value.to_sym])
+          in { value: Ident[value:] }
+            s(:restarg, [value.to_sym])
           end
         else
           case node
@@ -161,11 +163,14 @@ module SyntaxTree
       end
 
       def visit_bare_assoc_hash(node)
-        if (node in { assocs: [*, Assoc[value: nil], *] }) || (stack[-2] in ArrayLiteral)
-          s(:hash, visit_all(node.assocs))
-        else
-          s(:kwargs, visit_all(node.assocs))
-        end
+        type =
+          if ::Parser::Builders::Default.emit_kwargs && !(stack[-2] in ArrayLiteral)
+            :kwargs
+          else
+            :hash
+          end
+
+        s(type, visit_all(node.assocs))
       end
 
       def visit_BEGIN(node)
@@ -479,11 +484,7 @@ module SyntaxTree
       end
 
       def visit_hash(node)
-        if stack[-2] in ArrayLiteral
-          s(:kwargs, visit_all(node.assocs))
-        else
-          s(:hash, visit_all(node.assocs))
-        end
+        s(:hash, visit_all(node.assocs))
       end
 
       class HeredocSegments
