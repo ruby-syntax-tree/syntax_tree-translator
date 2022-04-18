@@ -74,11 +74,20 @@ module SyntaxTree
       end
 
       def visit_arg_star(node)
-        case node
-        in { value: nil }
-          s(:splat)
+        if stack[-2] in MLHS
+          case node
+          in { value: nil }
+            s(:restarg)
+          in { value: VarField[value: { value: }]}
+            s(:restarg, [value.to_sym])
+          end
         else
-          s(:splat, [visit(node.value)])
+          case node
+          in { value: nil }
+            s(:splat)
+          else
+            s(:splat, [visit(node.value)])
+          end
         end
       end
 
@@ -197,9 +206,9 @@ module SyntaxTree
           end
         in { operator: :"=>", right: VarField[value: { value: }] }
           s(:match_as, [visit(node.left), s(:match_var, [value.to_sym])])
-        in { operator: :"&&" }
+        in { operator: :"&&" | :and }
           s(:and, [visit(node.left), visit(node.right)])
-        in { operator: :"||" }
+        in { operator: :"||" | :or }
           s(:or, [visit(node.left), visit(node.right)])
         else
           s(:send, [visit(node.left), node.operator, visit(node.right)])
@@ -320,7 +329,11 @@ module SyntaxTree
       end
 
       def visit_const_path_field(node)
-        s(:casgn, [visit(node.parent), node.constant.value.to_sym])
+        if stack[-2] in MLHS
+          s(:send, [visit(node.parent), :"#{node.constant.value}="])
+        else
+          s(:casgn, [visit(node.parent), node.constant.value.to_sym])
+        end
       end
 
       def visit_const_path_ref(node)
@@ -432,7 +445,11 @@ module SyntaxTree
       end
 
       def visit_field(node)
-        s(:send, [visit(node.parent), node.name.value.to_sym])
+        if stack[-2] in MLHS
+          s(:send, [visit(node.parent), :"#{node.name.value}="])
+        else
+          s(:send, [visit(node.parent), node.name.value.to_sym])
+        end
       end
 
       def visit_float(node)
@@ -972,7 +989,7 @@ module SyntaxTree
       end
 
       def visit_undef(node)
-        s(:undef, [visit_all(node.symbols)])
+        s(:undef, visit_all(node.symbols))
       end
 
       def visit_unless(node)
