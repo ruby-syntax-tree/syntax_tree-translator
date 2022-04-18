@@ -30,38 +30,38 @@ module SyntaxTree
       end
 
       def visit_aref_field(node)
-        type = :send
-        children = [visit(node.collection)]
-
         if ::Parser::Builders::Default.emit_index
-          type = :indexasgn
+          case node
+          in { index: Args[parts:] }
+            s(:indexasgn, [visit(node.collection), *visit_all(parts)])
+          in { index: nil }
+            s(:indexasgn, [visit(node.collection), nil])
+          end
         else
-          children << :[]=
-        end
-
-        case node
-        in { index: Args[parts:] }
-          s(type, children + visit_all(parts))
-        else
-          s(type, children + [nil])
+          case node
+          in { index: Args[parts:] }
+            s(:send, [visit(node.collection), :[]=, *visit_all(parts)])
+          in { index: nil }
+            s(:send, [visit(node.collection), :[]=, nil])
+          end
         end
       end
 
       def visit_aref(node)
-        type = :send
-        children = [visit(node.collection)]
-
         if ::Parser::Builders::Default.emit_index
-          type = :index
+          case node
+          in { index: Args[parts:] }
+            s(:index, [visit(node.collection), *visit_all(parts)])
+          in { index: nil }
+            s(:index, [visit(node.collection)])
+          end
         else
-          children << :[]
-        end
-
-        case node
-        in { index: Args[parts:] }
-          s(type, children + visit_all(parts))
-        else
-          s(type, children + [nil])
+          case node
+          in { index: Args[parts:] }
+            s(:send, [visit(node.collection), :[], *visit_all(parts)])
+          in { index: nil }
+            s(:send, [visit(node.collection), :[], nil])
+          end
         end
       end
 
