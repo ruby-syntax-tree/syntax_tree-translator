@@ -372,7 +372,12 @@ module SyntaxTree
       end
 
       def visit_dyna_symbol(node)
-        s(:dsym, visit_all(node.parts))
+        case node
+        in { parts: [TStringContent[value:]] }
+          s(:sym, ["\"#{value}\"".undump.to_sym])
+        else
+          s(:dsym, visit_all(node.parts))
+        end
       end
 
       def visit_else(node)
