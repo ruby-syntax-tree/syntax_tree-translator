@@ -488,10 +488,10 @@ module SyntaxTree
       end
 
       class HeredocSegments
-        attr_reader :declaration, :segments
+        attr_reader :node, :segments
 
-        def initialize(declaration)
-          @declaration = declaration
+        def initialize(node)
+          @node = node
           @segments = []
         end
 
@@ -506,7 +506,7 @@ module SyntaxTree
         HeredocLine = Struct.new(:value, :segments)
 
         def trim!
-          return unless declaration[2] == "~"
+          return unless node.beginning.value[2] == "~"
           lines = [HeredocLine.new(+"", [])]
 
           segments.each do |segment|
@@ -524,31 +524,26 @@ module SyntaxTree
           lines.pop if lines.last.value.empty?
           return if lines.empty?
 
-          minimum = lines.first.value.length
-          lines.each_with_index do |line, index|
-            next if index > 0 && lines[index - 1].value.end_with?("\\\n")
-            minimum = [minimum, line.value[/^\s*/].length].min
-          end
-
           segments.clear
-
           lines.each do |line|
-            remaining = minimum
+            remaining = node.dedent
 
             line.segments.each do |segment|
-              if segment.type == :str && remaining > 0
-                whitespace = segment.children.first[/^\s{0,#{remaining}}/]
-                segment.children.first.sub!(/^#{whitespace}/, "")
-                remaining -= whitespace.length
-              end
-
               if segment.type == :str
-                if declaration[3] != "'" && segments.any? && segments.last.type == :str && segments.last.children.first.end_with?("\\\n")
+                if remaining > 0
+                  whitespace = segment.children.first[/^\s{0,#{remaining}}/]
+                  segment.children.first.sub!(/^#{whitespace}/, "")
+                  remaining -= whitespace.length
+                end
+
+                if node.beginning.value[3] != "'" && segments.any? && segments.last.type == :str && segments.last.children.first.end_with?("\\\n")
                   segments.last.children.first.gsub!(/\\\n\z/, "")
                   segments.last.children.first.concat(segment.children.first)
                 elsif segment.children.first.length > 0
                   segments << segment
                 end
+              else
+                segments << segment
               end
             end
           end
@@ -556,7 +551,7 @@ module SyntaxTree
       end
 
       def visit_heredoc(node)
-        heredoc_segments = HeredocSegments.new(node.beginning.value)
+        heredoc_segments = HeredocSegments.new(node)
 
         node.parts.each do |part|
           if (part in TStringContent[value:]) && value.count("\n") > 1
