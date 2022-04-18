@@ -195,6 +195,8 @@ module SyntaxTree
           s(:and, [visit(node.left), visit(node.right)])
         in { operator: :"||" | :or }
           s(:or, [visit(node.left), visit(node.right)])
+        in { left: RegexpLiteral[parts: [TStringContent]], operator: :=~ }
+          s(:match_with_lvasgn, [visit(node.left), visit(node.right)])
         else
           s(:send, [visit(node.left), node.operator, visit(node.right)])
         end
