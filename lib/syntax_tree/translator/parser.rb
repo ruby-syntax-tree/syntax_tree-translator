@@ -124,29 +124,8 @@ module SyntaxTree
       end
 
       def visit_assign(node)
-        case node.target
-        in ARefField[collection:, index:]
-          target = visit(node.target)
-          s(target.type, target.children + [visit(node.value)])
-        in ConstPathField
-          s(:casgn, visit(node.target).children + [visit(node.value)])
-        in Field[parent:, operator:, name:]
-          s(send_type(operator), [visit(parent), "#{name.value}=".to_sym, visit(node.value)])
-        in TopConstField
-          s(:casgn, visit(node.target).children + [visit(node.value)])
-        in VarField[value: Const]
-          s(:casgn, visit(node.target).children + [visit(node.value)])
-        in VarField[value: CVar]
-          s(:cvasgn, visit(node.target).children + [visit(node.value)])
-        in VarField[value: GVar]
-          s(:gvasgn, visit(node.target).children + [visit(node.value)])
-        in VarField[value: Ident]
-          s(:lvasgn, visit(node.target).children + [visit(node.value)])
-        in VarField[value: IVar]
-          s(:ivasgn, visit(node.target).children + [visit(node.value)])
-        in VarField[value: VarRef]
-          s(:lvasgn, visit(node.target).children + [visit(node.value)])
-        end
+        target = visit(node.target)
+        s(target.type, target.children + [visit(node.value)])
       end
 
       def visit_assoc(node)
@@ -447,10 +426,10 @@ module SyntaxTree
       end
 
       def visit_field(node)
-        if stack[-2] in MLHS
-          s(:send, [visit(node.parent), :"#{node.name.value}="])
+        if stack[-2] in Assign | MLHS
+          s(send_type(node.operator), [visit(node.parent), :"#{node.name.value}="])
         else
-          s(:send, [visit(node.parent), node.name.value.to_sym])
+          s(send_type(node.operator), [visit(node.parent), node.name.value.to_sym])
         end
       end
 
