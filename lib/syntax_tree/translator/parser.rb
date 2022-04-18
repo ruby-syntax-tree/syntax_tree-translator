@@ -669,9 +669,26 @@ module SyntaxTree
       end
 
       def visit_method_add_block(node)
-        statements = (node.block in BraceBlock) ? node.block.statements : node.block.bodystmt
-        arguments = node.block.block_var ? visit(node.block.block_var) : s(:args)
-        s(:block, [visit(node.call), arguments, visit(statements)])
+        statements =
+          if node.block in BraceBlock
+            node.block.statements
+          else
+            node.block.bodystmt
+          end
+
+        arguments =
+          if node.block.block_var
+            visit(node.block.block_var)
+          else
+            s(:args)
+          end
+
+        if node.call in Break
+          call = visit(node.call)
+          s(:break, [s(:block, [*call.children, arguments, visit(statements)])])
+        else
+          s(:block, [visit(node.call), arguments, visit(statements)])
+        end
       end
 
       def visit_mlhs(node)
@@ -1101,10 +1118,11 @@ module SyntaxTree
       end
 
       def visit_word(node)
-        if node.parts.length > 1
-          s(:dstr, visit_all(node.parts))
+        case node
+        in { parts: [TStringContent => part] }
+          visit(part)
         else
-          visit(node.parts.first)
+          s(:dstr, visit_all(node.parts))
         end
       end
 
