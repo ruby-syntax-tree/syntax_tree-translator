@@ -165,7 +165,7 @@ module SyntaxTree
       end
 
       def visit_backref(node)
-        if node.value.match?(/^\d+$/)
+        if node.value.match?(/^\$\d+$/)
           s(:nth_ref, [node.value[1..-1].to_i])
         else
           s(:back_ref, [node.value.to_sym])
