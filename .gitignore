@@ -1,1 +1,11 @@
+/.bundle/
+/.yardoc
+/_yardoc/
+/coverage/
+/pkg/
+/rdocs/
+/spec/reports/
+/tmp/
+/vendor/
+
 test.rb

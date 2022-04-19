@@ -2,8 +2,4 @@
 
 source "https://rubygems.org"
 
-gem "minitest"
-gem "parser"
-gem "rake"
-gem "rubocop-ast"
-gem "syntax_tree"
+gemspec
