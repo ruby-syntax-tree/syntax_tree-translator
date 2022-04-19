@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "parser"
+require "rubocop/ast"
 require "syntax_tree"
 
 require "syntax_tree/translator/parser"

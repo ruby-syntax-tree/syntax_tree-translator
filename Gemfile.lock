@@ -26,6 +26,7 @@ GEM
     syntax_tree (2.2.0)
 
 PLATFORMS
+  ruby
   x86_64-darwin-21
 
 DEPENDENCIES
