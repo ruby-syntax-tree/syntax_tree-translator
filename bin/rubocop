@@ -15,7 +15,7 @@ class RuboCop::AST::ProcessedSource
   private
 
   def tokenize(parser)
-    visitor = SyntaxTree::Translator::Parser.new("(string)", 1)
+    visitor = SyntaxTree::Translator::RuboCop.new(@buffer, "(string)", 1)
 
     ast = visitor.visit(SyntaxTree.parse(@buffer.source))
     ast.complete!
@@ -26,12 +26,6 @@ class RuboCop::AST::ProcessedSource
     [ast, comments, tokens]
   rescue Parser::SyntaxError
     [nil, [], []]
-  end
-end
-
-class SyntaxTree::Translator::Parser
-  def s(type, children = [], opts = {})
-    ::RuboCop::AST::Builder::NODE_MAP.fetch(type, ::RuboCop::AST::Node).new(type, children, opts)
   end
 end
 

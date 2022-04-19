@@ -4,3 +4,4 @@ require "parser"
 require "syntax_tree"
 
 require_relative "translator/parser"
+require_relative "translator/rubocop"

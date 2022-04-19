@@ -3,7 +3,7 @@
 module SyntaxTree
   module Translator
     class Parser < Visitor
-      attr_reader :filename, :lineno
+      attr_reader :buffer, :filename, :lineno
 
       # We keep a stack of nodes that we're visiting so that when nodes are
       # being translated they can look up their parents. This is necessary
@@ -11,7 +11,8 @@ module SyntaxTree
       # their context.
       attr_reader :stack
 
-      def initialize(filename, lineno)
+      def initialize(buffer, filename, lineno)
+        @buffer = buffer
         @filename = filename
         @lineno = lineno
 
@@ -1181,7 +1182,10 @@ module SyntaxTree
       end
 
       def visit_vcall(node)
-        s(:send, [nil, node.value.value.to_sym])
+        range = ::Parser::Source::Range.new(buffer, node.location.start_char, node.location.end_char)
+        location = ::Parser::Source::Map::Send.new(nil, range, nil, nil, range)
+
+        s(:send, [nil, node.value.value.to_sym], location: location)
       end
 
       def visit_void_stmt(node)
