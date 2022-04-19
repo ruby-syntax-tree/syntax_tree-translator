@@ -4,6 +4,7 @@ PATH
     syntax_tree-translator (0.1.0)
       parser
       rubocop-ast
+      ruby_parser
       syntax_tree
 
 GEM
@@ -17,6 +18,9 @@ GEM
     rake (13.0.6)
     rubocop-ast (1.17.0)
       parser (>= 3.1.1.0)
+    ruby_parser (3.19.1)
+      sexp_processor (~> 4.16)
+    sexp_processor (4.16.1)
     simplecov (0.21.2)
       docile (~> 1.1)
       simplecov-html (~> 0.11)
@@ -26,8 +30,8 @@ GEM
     syntax_tree (2.2.0)
 
 PLATFORMS
-  ruby
   x86_64-darwin-21
+  x86_64-linux
 
 DEPENDENCIES
   bundler
