@@ -1,8 +1,6 @@
 PATH
   remote: .
   specs:
-    parser (3.1.2.0)
-      ast (~> 2.4.1)
     syntax_tree-translator (0.1.0)
       parser
       rubocop-ast
@@ -14,6 +12,8 @@ GEM
     ast (2.4.2)
     docile (1.4.0)
     minitest (5.15.0)
+    parser (3.1.2.0)
+      ast (~> 2.4.1)
     rake (13.0.6)
     rubocop-ast (1.17.0)
       parser (>= 3.1.1.0)

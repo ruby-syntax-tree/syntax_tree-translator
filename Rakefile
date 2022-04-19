@@ -5,7 +5,6 @@ require "rake/testtask"
 
 Rake::TestTask.new(:test) do |t|
   t.libs << "test"
-  t.libs << "lib"
 
   # We're going to make a list of our own test files, as well as the parser test
   # from the parser gem which we've included as a submodule.
