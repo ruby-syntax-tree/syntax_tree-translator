@@ -414,10 +414,6 @@ module SyntaxTree
         raise
       end
 
-      def visit_embdoc(node)
-        raise
-      end
-
       def visit_embexpr_beg(node)
         raise
       end
