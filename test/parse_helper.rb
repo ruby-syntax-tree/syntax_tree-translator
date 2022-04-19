@@ -50,8 +50,9 @@ module ParseHelper
     # I'm not even sure what this is testing, because the code is invalid in
     # CRuby.
     "test_control_meta_escape_chars_in_regexp__since_31:*",
+  ]
 
-    # The ones below here are TODO.
+  TODO_FAILURES = [
     "test_dedenting_heredoc:333",
     "test_dedenting_heredoc:389",
     "test_dedenting_heredoc:398",
@@ -72,11 +73,16 @@ module ParseHelper
     # older versions.
     return unless versions.include?("3.2")
 
-    # Skip past any known failures.
     caller(1, 3).each do |line|
       _, lineno, name = *line.match(/(\d+):in `(.+)'/)
+
+      # Return directly and don't do anything if it's a known failure.
       return if KNOWN_FAILURES.include?("#{name}:#{lineno}")
       return if KNOWN_FAILURES.include?("#{name}:*")
+
+      # Report a skipped test if it's a known todo failure.
+      skip if TODO_FAILURES.include?("#{name}:#{lineno}")
+      skip if TODO_FAILURES.include?("#{name}:*")
     end
 
     expected = parse(code)
