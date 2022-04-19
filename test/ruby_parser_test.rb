@@ -183,6 +183,7 @@ AssertParse::SKIPS = [
   "test_regexp_escape_extended",
   "test_regexp_unicode_curlies",
   "test_regexp_esc_u",
+  "test_regexp_esc_C_slash",
   "test_return_call_assocs",
   "test_rhs_asgn",
   "test_safe_attrasgn",
