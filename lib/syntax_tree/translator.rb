@@ -3,5 +3,6 @@
 require "parser"
 require "syntax_tree"
 
-require_relative "translator/parser"
-require_relative "translator/rubocop"
+require "syntax_tree/translator/parser"
+require "syntax_tree/translator/rubocop"
+require "syntax_tree/translator/version"
