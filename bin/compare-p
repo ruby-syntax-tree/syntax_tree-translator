@@ -41,7 +41,7 @@ parser.diagnostics.all_errors_are_fatal = true
 buffer = Parser::Source::Buffer.new("(string)", 1)
 buffer.source = source.dup.force_encoding(parser.default_encoding)
 
-visitor = SyntaxTree::Translator::Parser.new(buffer, "(string)", 1)
+visitor = SyntaxTree::Translator::Parser.new(buffer)
 stree = visitor.visit(SyntaxTree.parse(source))
 ptree = parser.parse(buffer)
 

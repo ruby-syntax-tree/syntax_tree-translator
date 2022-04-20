@@ -91,7 +91,7 @@ module ParseHelper
     buffer = Parser::Source::Buffer.new("(string)")
     buffer.source = code
 
-    visitor = SyntaxTree::Translator::Parser.new(buffer, "(string)", 1)
+    visitor = SyntaxTree::Translator::Parser.new(buffer)
     actual = visitor.visit(SyntaxTree.parse(code))
     assert_equal(expected, actual)
   end

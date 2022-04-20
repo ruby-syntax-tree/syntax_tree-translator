@@ -40,7 +40,7 @@ To translate into the [whitequark/parser](https://github.com/whitequark/parser) 
 buffer = Parser::Source::Buffer.new("(string)")
 buffer.source = source
 
-visitor = SyntaxTree::Translator::Parser.new(buffer, "(string)", 1)
+visitor = SyntaxTree::Translator::Parser.new(buffer)
 node = visitor.visit(program)
 ```
 
@@ -52,7 +52,7 @@ To translate into the [rubocop/rubocop-ast](https://github.com/rubocop/rubocop-a
 buffer = Parser::Source::Buffer.new("(string)")
 buffer.source = source
 
-visitor = SyntaxTree::Translator::RuboCop.new(buffer, "(string)", 1)
+visitor = SyntaxTree::Translator::RuboCop.new(buffer)
 node = visitor.visit(program)
 ```
 

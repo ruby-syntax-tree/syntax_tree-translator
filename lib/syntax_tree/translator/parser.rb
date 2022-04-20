@@ -3,19 +3,10 @@
 module SyntaxTree
   module Translator
     class Parser < Visitor
-      attr_reader :buffer, :filename, :lineno
+      attr_reader :buffer, :stack
 
-      # We keep a stack of nodes that we're visiting so that when nodes are
-      # being translated they can look up their parents. This is necessary
-      # because the parser gem changes the names of some nodes depending on
-      # their context.
-      attr_reader :stack
-
-      def initialize(buffer, filename, lineno)
+      def initialize(buffer)
         @buffer = buffer
-        @filename = filename
-        @lineno = lineno
-
         @stack = []
       end
 
@@ -659,9 +650,9 @@ module SyntaxTree
       def visit_kw(node)
         case node.value
         in "__FILE__"
-          s(:str, [filename])
+          s(:str, [buffer.name])
         in "__LINE__"
-          s(:int, [node.location.start_line + lineno - 1])
+          s(:int, [node.location.start_line + buffer.first_line - 1])
         in "__ENCODING__" unless ::Parser::Builders::Default.emit_encoding
           s(:const, [s(:const, [nil, :Encoding]), :UTF_8])
         else
