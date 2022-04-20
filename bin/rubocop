@@ -15,7 +15,7 @@ class RuboCop::AST::ProcessedSource
   private
 
   def tokenize(parser)
-    visitor = SyntaxTree::Translator::RuboCop.new(@buffer, "(string)", 1)
+    visitor = SyntaxTree::Translator::RuboCop.new(@buffer)
 
     ast = visitor.visit(SyntaxTree.parse(@buffer.source))
     ast.complete!
