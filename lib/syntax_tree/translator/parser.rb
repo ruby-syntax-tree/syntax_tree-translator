@@ -200,7 +200,14 @@ module SyntaxTree
         in { left: RegexpLiteral[parts: [TStringContent]], operator: :=~ }
           s(:match_with_lvasgn, [visit(node.left), visit(node.right)])
         else
-          s(:send, [visit(node.left), node.operator, visit(node.right)])
+          left = visit(node.left)
+          right = visit(node.right)
+
+          operator = find_range(node.operator.to_s, node.left.location.end_char, node.right.location.start_char)
+          expression = left.location.expression.join(right.location.expression)
+          location = ::Parser::Source::Map::Send.new(nil, operator, nil, nil, expression)
+
+          s(:send, [left, node.operator, right], location: location)
         end
       end
 
@@ -286,7 +293,11 @@ module SyntaxTree
       end
 
       def visit_CHAR(node)
-        s(:str, [node.value[1..-1]])
+        range = range_for(node)
+        begin_l = range.with(end_pos: range.begin_pos + 1)
+        location = ::Parser::Source::Map::Collection.new(begin_l, nil, range)
+
+        s(:str, [node.value[1..-1]], location: location)
       end
 
       def visit_class(node)
@@ -321,7 +332,10 @@ module SyntaxTree
       end
 
       def visit_const(node)
-        s(:const, [nil, node.value.to_sym])
+        range = range_for(node)
+        location = ::Parser::Source::Map::Constant.new(nil, range, range)
+
+        s(:const, [nil, node.value.to_sym], location: location)
       end
 
       def visit_const_path_field(node)
@@ -341,7 +355,9 @@ module SyntaxTree
       end
 
       def visit_cvar(node)
-        s(:cvar, [node.value.to_sym])
+        location = ::Parser::Source::Map::Variable.new(range_for(node))
+
+        s(:cvar, [node.value.to_sym], location: location)
       end
 
       def visit_def(node)
@@ -449,7 +465,9 @@ module SyntaxTree
       end
 
       def visit_float(node)
-        s(:float, [node.value.to_f])
+        location = ::Parser::Source::Map::Operator.new(nil, range_for(node))
+
+        s(:float, [node.value.to_f], location: location)
       end
 
       def visit_fndptn(node)
@@ -468,7 +486,9 @@ module SyntaxTree
       end
 
       def visit_gvar(node)
-        s(:gvar, [node.value.to_sym])
+        location = ::Parser::Source::Map::Variable.new(range_for(node))
+
+        s(:gvar, [node.value.to_sym], location: location)
       end
 
       def visit_hash(node)
@@ -640,11 +660,15 @@ module SyntaxTree
       end
 
       def visit_int(node)
-        s(:int, [node.value.to_i])
+        location = ::Parser::Source::Map::Operator.new(nil, range_for(node))
+
+        s(:int, [node.value.to_i], location: location)
       end
 
       def visit_ivar(node)
-        s(:ivar, [node.value.to_sym])
+        location = ::Parser::Source::Map::Variable.new(range_for(node))
+
+        s(:ivar, [node.value.to_sym], location: location)
       end
 
       def visit_kw(node)
@@ -1119,7 +1143,10 @@ module SyntaxTree
         in { statement:, operator: "-" }
           s(:send, [visit(statement), :"-@"])
         else
-          s(:send, [visit(node.statement), node.operator.to_sym])
+          operator = find_range(node.operator, node.location.start_char, node.location.end_char)
+          location = ::Parser::Source::Map::Send.new(nil, operator, nil, nil, range_for(node))
+
+          s(:send, [visit(node.statement), node.operator.to_sym], location: location)
         end
       end
 
@@ -1169,7 +1196,7 @@ module SyntaxTree
       end
 
       def visit_vcall(node)
-        range = ::Parser::Source::Range.new(buffer, node.location.start_char, node.location.end_char)
+        range = range_for(node)
         location = ::Parser::Source::Map::Send.new(nil, range, nil, nil, range)
 
         s(:send, [nil, node.value.value.to_sym], location: location)
@@ -1240,6 +1267,15 @@ module SyntaxTree
 
       private
 
+      def find_range(value, search_left, search_right)
+        source = buffer.source[search_left...search_right]
+
+        start_char = search_left + source.index(value)
+        end_char = start_char + value.length
+
+        ::Parser::Source::Range.new(buffer, start_char, end_char)
+      end
+
       # We need to find if we should transform this block into a numblock
       # since there could be new numbered variables like _1.
       def num_block_type(statements)
@@ -1255,6 +1291,10 @@ module SyntaxTree
         end
 
         variables.max
+      end
+
+      def range_for(node)
+        ::Parser::Source::Range.new(buffer, node.location.start_char, node.location.end_char)
       end
 
       def s(type, children = [], opts = {})
