@@ -2,7 +2,7 @@
 
 module SyntaxTree
   module Translator
-    class RubyParser < Visitor
+    class RubyParser < BasicVisitor
       attr_reader :stack
 
       def initialize
@@ -48,11 +48,6 @@ module SyntaxTree
         s(:block_pass, *children)
       end
 
-      # Visit an ArgParen node.
-      def visit_arg_paren(node)
-        raise
-      end
-
       # Visit an ArgStar node.
       def visit_arg_star(node)
         case node
@@ -66,11 +61,6 @@ module SyntaxTree
       # Visit an Args node.
       def visit_args(node)
         s(:args, *visit_all(node.parts))
-      end
-
-      # Visit an ArgsForward node.
-      def visit_args_forward(node)
-        raise
       end
 
       # Visit an ArrayLiteral node.
@@ -111,11 +101,6 @@ module SyntaxTree
         node.value.to_sym
       end
 
-      # Visit a Backtick node.
-      def visit_backtick(node)
-        raise
-      end
-
       # Visit a BareAssocHash node.
       def visit_bare_assoc_hash(node)
         s(:hash, *visit_all(node.assocs).flatten(1))
@@ -124,11 +109,6 @@ module SyntaxTree
       # Visit a BEGINBlock node.
       def visit_BEGIN(node)
         s(:iter, s(:preexe), 0, visit(node.statements))
-      end
-
-      # Visit a Begin node.
-      def visit_begin(node)
-        raise
       end
 
       # Visit a Binary node.
@@ -161,11 +141,6 @@ module SyntaxTree
       # Visit a BodyStmt node.
       def visit_bodystmt(node)
         visit(node.statements)
-      end
-
-      # Visit a BraceBlock node.
-      def visit_brace_block(node)
-        raise
       end
 
       # Visit a Break node.
@@ -206,11 +181,6 @@ module SyntaxTree
         s(:class, visit(node.constant), visit(node.superclass), visit(node.bodystmt))
       end
 
-      # Visit a Comma node.
-      def visit_comma(node)
-        raise
-      end
-
       # Visit a Command node.
       def visit_command(node)
         s(:call, nil, node.message.value.to_sym, *visit_all(node.arguments.parts))
@@ -231,11 +201,6 @@ module SyntaxTree
         s(call_type(node.operator), visit(node.receiver), visit(node.message), *arguments)
       end
 
-      # Visit a Comment node.
-      def visit_comment(node)
-        raise
-      end
-
       # Visit a Const node.
       def visit_const(node)
         s(:const, node.value.to_sym)
@@ -244,11 +209,6 @@ module SyntaxTree
       # Visit a ConstPathField node.
       def visit_const_path_field(node)
         s(:colon2, visit(node.parent), node.constant.value.to_sym)
-      end
-
-      # Visit a ConstPathRef node.
-      def visit_const_path_ref(node)
-        raise
       end
 
       # Visit a ConstRef node.
@@ -287,11 +247,6 @@ module SyntaxTree
       def visit_defs(node)
         args = (node.params in Params) ? node.params : node.params.contents
         s(:defs, visit(node.target), visit(node.name), visit(args), visit(node.bodystmt))
-      end
-
-      # Visit a DoBlock node.
-      def visit_do_block(node)
-        raise
       end
 
       # Visit a Dot2 node.
@@ -334,36 +289,6 @@ module SyntaxTree
         s(:if, visit(node.predicate), statements, visit(node.consequent))
       end
 
-      # Visit an EmbDoc node.
-      def visit_embdoc(node)
-        raise
-      end
-
-      # Visit an EmbExprBeg node.
-      def visit_embexpr_beg(node)
-        raise
-      end
-
-      # Visit an EmbExprEnd node.
-      def visit_embexpr_end(node)
-        raise
-      end
-
-      # Visit an EmbVar node.
-      def visit_embvar(node)
-        raise
-      end
-
-      # Visit an Ensure node.
-      def visit_ensure(node)
-        raise
-      end
-
-      # Visit an ExcessedComma node.
-      def visit_excessed_comma(node)
-        raise
-      end
-
       # Visit a FCall node.
       def visit_fcall(node)
         case node
@@ -386,16 +311,6 @@ module SyntaxTree
         s(:lit, node.value.to_f)
       end
 
-      # Visit a FndPtn node.
-      def visit_fndptn(node)
-        raise
-      end
-
-      # Visit a For node.
-      def visit_for(node)
-        raise
-      end
-
       # Visit a GVar node.
       def visit_gvar(node)
         node.value.to_sym
@@ -404,16 +319,6 @@ module SyntaxTree
       # Visit a HashLiteral node.
       def visit_hash(node)
         s(:hash, *visit_all(node.assocs).flatten(1))
-      end
-
-      # Visit a Heredoc node.
-      def visit_heredoc(node)
-        raise
-      end
-
-      # Visit a HeredocBeg node.
-      def visit_heredoc_beg(node)
-        raise
       end
 
       # Visit a HshPtn node.
@@ -484,19 +389,14 @@ module SyntaxTree
         (stack[-2] in Params) ? value : s(:lit, value)
       end
 
-      # Visit a LabelEnd node.
-      def visit_label_end(node)
-        raise
-      end
-
       # Visit a Lambda node.
       def visit_lambda(node)
         children = [s(:lambda)]
 
         case node
-        in { params: Paren[contents: Params => params] } if params.empty?
+        in { params: Paren[contents: LambdaVar[params:]] } if params.empty?
           children << s(:args)
-        in { params: Params => params } if params.empty?
+        in { params: LambdaVar[params:] } if params.empty?
           children << 0
         else
           children << visit(node.params)
@@ -507,19 +407,9 @@ module SyntaxTree
         s(:iter, *children)
       end
 
-      # Visit a LBrace node.
-      def visit_lbrace(node)
-        raise
-      end
-
-      # Visit a LBracket node.
-      def visit_lbracket(node)
-        raise
-      end
-
-      # Visit a LParen node.
-      def visit_lparen(node)
-        raise
+      # Visit a LambdaVar node.
+      def visit_lambda_var(node)
+        visit(node.params)
       end
 
       # Visit a MAssign node.
@@ -554,11 +444,6 @@ module SyntaxTree
       # Visit a MLHSParen node.
       def visit_mlhs_paren(node)
         visit(node.contents)
-      end
-
-      # Visit a ModuleDeclaration node.
-      def visit_module(node)
-        raise
       end
 
       # Visit a MRHS node.
@@ -616,21 +501,6 @@ module SyntaxTree
         visit(node.contents)
       end
 
-      # Visit a Period node.
-      def visit_period(node)
-        raise
-      end
-
-      # Visit a PinnedBegin node.
-      def visit_pinned_begin(node)
-        raise
-      end
-
-      # Visit a PinnedVarRef node.
-      def visit_pinned_var_ref(node)
-        raise
-      end
-
       # Visit a Program node.
       def visit_program(node)
         visit(node.statements)
@@ -644,19 +514,9 @@ module SyntaxTree
         )
       end
 
-      # Visit a QSymbolsBeg node.
-      def visit_qsymbols_beg(node)
-        raise
-      end
-
       # Visit a QWords node.
       def visit_qwords(node)
         s(:array, *visit_all(node.elements))
-      end
-
-      # Visit a QWordsBeg node.
-      def visit_qwords_beg(node)
-        raise
       end
 
       # Visit a RAssign node.
@@ -669,49 +529,9 @@ module SyntaxTree
         s(:lit, node.value.to_r)
       end
 
-      # Visit a RBrace node.
-      def visit_rbrace(node)
-        raise
-      end
-
-      # Visit a RBracket node.
-      def visit_rbracket(node)
-        raise
-      end
-
       # Visit a Redo node.
       def visit_redo(node)
         s(:redo)
-      end
-
-      # Visit a RegexpBeg node.
-      def visit_regexp_beg(node)
-        raise
-      end
-
-      # Visit a RegexpContent node.
-      def visit_regexp_content(node)
-        raise
-      end
-
-      # Visit a RegexpEnd node.
-      def visit_regexp_end(node)
-        raise
-      end
-
-      # Visit a RegexpLiteral node.
-      def visit_regexp_literal(node)
-        raise
-      end
-
-      # Visit a Rescue node.
-      def visit_rescue(node)
-        raise
-      end
-
-      # Visit a RescueEx node.
-      def visit_rescue_ex(node)
-        raise
       end
 
       # Visit a RescueMod node.
@@ -739,16 +559,6 @@ module SyntaxTree
         s(:return)
       end
 
-      # Visit a RParen node.
-      def visit_rparen(node)
-        raise
-      end
-
-      # Visit a SClass node.
-      def visit_sclass(node)
-        raise
-      end
-
       # Visit a Statements node.
       def visit_statements(node)
         children = node.body.reject { |child| child in Comment | EmbDoc | EndContent | VoidStmt }
@@ -761,21 +571,6 @@ module SyntaxTree
         else
           s(:block, *visit_all(children))
         end
-      end
-
-      # Visit a StringConcat node.
-      def visit_string_concat(node)
-        raise
-      end
-
-      # Visit a StringContent node.
-      def visit_string_content(node)
-        raise
-      end
-
-      # Visit a StringDVar node.
-      def visit_string_dvar(node)
-        raise
       end
 
       # Visit a StringEmbExpr node.
@@ -810,21 +605,6 @@ module SyntaxTree
         end
       end
 
-      # Visit a Super node.
-      def visit_super(node)
-        raise
-      end
-
-      # Visit a SymBeg node.
-      def visit_symbeg(node)
-        raise
-      end
-
-      # Visit a SymbolContent node.
-      def visit_symbol_content(node)
-        raise
-      end
-
       # Visit a SymbolLiteral node.
       def visit_symbol_literal(node)
         s(:lit, node.value.value.to_sym)
@@ -833,21 +613,6 @@ module SyntaxTree
       # Visit a Symbols node.
       def visit_symbols(node)
         s(:array, *visit_all(node.elements))
-      end
-
-      # Visit a SymbolsBeg node.
-      def visit_symbols_beg(node)
-        raise
-      end
-
-      # Visit a TLambda node.
-      def visit_tlambda(node)
-        raise
-      end
-
-      # Visit a TLamBeg node.
-      def visit_tlambeg(node)
-        raise
       end
 
       # Visit a TopConstField node.
@@ -860,19 +625,9 @@ module SyntaxTree
         s(:colon3, node.constant.value.to_sym)
       end
 
-      # Visit a TStringBeg node.
-      def visit_tstring_beg(node)
-        raise
-      end
-
       # Visit a TStringContent node.
       def visit_tstring_content(node)
         node.value
-      end
-
-      # Visit a TStringEnd node.
-      def visit_tstring_end(node)
-        raise
       end
 
       # Visit an Unary node.
@@ -889,16 +644,6 @@ module SyntaxTree
         else
           s(:call, visit(node.statement), node.operator.to_sym)
         end
-      end
-
-      # Visit an Undef node.
-      def visit_undef(node)
-        raise
-      end
-
-      # Visit an Unless node.
-      def visit_unless(node)
-        raise
       end
 
       # Visit an UnlessMod node.
@@ -943,11 +688,6 @@ module SyntaxTree
       # Visit a VCall node.
       def visit_vcall(node)
         s(:call, nil, node.value.value.to_sym)
-      end
-
-      # Visit a VoidStmt node.
-      def visit_void_stmt(node)
-        raise
       end
 
       # Visit a When node.
@@ -996,16 +736,6 @@ module SyntaxTree
         s(:array, *visit_all(node.elements))
       end
 
-      # Visit a WordsBeg node.
-      def visit_words_beg(node)
-        raise
-      end
-
-      # Visit a XString node.
-      def visit_xstring(node)
-        raise
-      end
-
       # Visit a XStringLiteral node.
       def visit_xstring_literal(node)
         case node
@@ -1034,11 +764,6 @@ module SyntaxTree
       # Visit a ZSuper node.
       def visit_zsuper(node)
         s(:zsuper)
-      end
-
-      # Visit an EndContent node.
-      def visit___end__(node)
-        raise
       end
 
       private

@@ -2,7 +2,7 @@
 
 module SyntaxTree
   module Translator
-    class Parser < Visitor
+    class Parser < BasicVisitor
       attr_reader :buffer, :stack
 
       def initialize(buffer)
@@ -61,10 +61,6 @@ module SyntaxTree
         s(:block_pass, [visit(node.value)])
       end
 
-      def visit_arg_paren(node)
-        raise
-      end
-
       def visit_arg_star(node)
         if stack[-3] in MLHSParen[contents: MLHS]
           case node
@@ -83,10 +79,6 @@ module SyntaxTree
             s(:splat, [visit(node.value)])
           end
         end
-      end
-
-      def visit_args(node)
-        raise
       end
 
       def visit_args_forward(node)
@@ -148,10 +140,6 @@ module SyntaxTree
         else
           s(:back_ref, [node.value.to_sym])
         end
-      end
-
-      def visit_backtick(node)
-        raise
       end
 
       def visit_bare_assoc_hash(node)
@@ -252,10 +240,6 @@ module SyntaxTree
         inner
       end
 
-      def visit_brace_block(node)
-        raise
-      end
-
       def visit_break(node)
         s(:break, visit_all(node.arguments.parts))
       end
@@ -293,10 +277,6 @@ module SyntaxTree
         s(:class, [visit(node.constant), visit(node.superclass), visit(node.bodystmt)])
       end
 
-      def visit_comma(node)
-        raise
-      end
-
       def visit_command(node)
         s(:send, [nil, node.message.value.to_sym, *visit_all(node.arguments.parts)])
       end
@@ -314,10 +294,6 @@ module SyntaxTree
         end
 
         s(send_type(node.operator), children)
-      end
-
-      def visit_comment(node)
-        raise
       end
 
       def visit_const(node)
@@ -368,10 +344,6 @@ module SyntaxTree
         s(:defs, [visit(node.target), node.name.value.to_sym, visit(args), visit(node.bodystmt)])
       end
 
-      def visit_do_block(node)
-        raise
-      end
-
       def visit_dot2(node)
         s(:irange, [visit(node.left), visit(node.right)])
       end
@@ -401,32 +373,12 @@ module SyntaxTree
         s(:if, [visit(node.predicate), visit(node.statements), visit(node.consequent)])
       end
 
-      def visit_embdoc(node)
-        raise
-      end
-
-      def visit_embexpr_beg(node)
-        raise
-      end
-
-      def visit_embexpr_end(node)
-        raise
-      end
-
-      def visit_embvar(node)
-        raise
-      end
-
       def visit_END(node)
         s(:postexe, [visit(node.statements)])
       end
 
       def visit_ensure(node)
         s(:ensure, [visit(node.statements)])
-      end
-
-      def visit_excessed_comma(node)
-        raise
       end
 
       def visit_fcall(node)
@@ -564,10 +516,6 @@ module SyntaxTree
         end
       end
 
-      def visit_heredoc_beg(node)
-        raise
-      end
-
       def visit_hshptn(node)
         children =
           node.keywords.map do |(keyword, value)|
@@ -673,12 +621,8 @@ module SyntaxTree
         s(:sym, [node.value.chomp(":").to_sym])
       end
 
-      def visit_label_end(node)
-        raise
-      end
-
       def visit_lambda(node)
-        args = (node.params in Params) ? node.params : node.params.contents
+        args = (node.params in LambdaVar) ? node.params : node.params.contents
 
         arguments = visit(args)
         child =
@@ -697,16 +641,8 @@ module SyntaxTree
         s(type, [child, arguments, visit(node.statements)])
       end
 
-      def visit_lbrace(node)
-        raise
-      end
-
-      def visit_lbracket(node)
-        raise
-      end
-
-      def visit_lparen(node)
-        raise
+      def visit_lambda_var(node)
+        visit(node.params)
       end
 
       def visit_massign(node)
@@ -769,10 +705,6 @@ module SyntaxTree
         else
           s(:send, [visit(node.statement), :"!"])
         end
-      end
-
-      def visit_op(node)
-        raise
       end
 
       def visit_opassign(node)
@@ -841,10 +773,6 @@ module SyntaxTree
         end
       end
 
-      def visit_period(node)
-        raise
-      end
-
       def visit_pinned_begin(node)
         s(:pin, [s(:begin, [visit(node.statement)])])
       end
@@ -861,16 +789,8 @@ module SyntaxTree
         s(:array, node.elements.map { |element| s(:sym, [element.value.to_sym]) })
       end
 
-      def visit_qsymbols_beg(node)
-        raise
-      end
-
       def visit_qwords(node)
         s(:array, visit_all(node.elements))
-      end
-
-      def visit_qwords_beg(node)
-        raise
       end
 
       def visit_rassign(node)
@@ -882,28 +802,8 @@ module SyntaxTree
         s(:rational, [node.value.to_r])
       end
 
-      def visit_rbrace(node)
-        raise
-      end
-
-      def visit_rbracket(node)
-        raise
-      end
-
       def visit_redo(node)
         s(:redo)
-      end
-
-      def visit_regexp_beg(node)
-        raise
-      end
-
-      def visit_regexp_content(node)
-        raise
-      end
-    
-      def visit_regexp_end(node)
-        raise
       end
 
       def visit_regexp_literal(node)
@@ -955,10 +855,6 @@ module SyntaxTree
         s(:rescue, children)
       end
 
-      def visit_rescue_ex(node)
-        raise
-      end
-
       def visit_rescue_mod(node)
         s(:rescue, [visit(node.statement), s(:resbody, [nil, nil, visit(node.value)]), nil])
       end
@@ -977,10 +873,6 @@ module SyntaxTree
 
       def visit_return0(node)
         s(:return)
-      end
-
-      def visit_rparen(node)
-        raise
       end
 
       def visit_sclass(node)
@@ -1042,14 +934,6 @@ module SyntaxTree
         end
       end
 
-      def visit_symbeg(node)
-        raise
-      end
-
-      def visit_symbol_content(node)
-        raise
-      end
-
       def visit_symbol_literal(node)
         s(:sym, [node.value.value.to_sym])
       end
@@ -1067,18 +951,6 @@ module SyntaxTree
         s(:array, children)
       end
 
-      def visit_symbols_beg(node)
-        raise
-      end
-
-      def visit_tlambda(node)
-        raise
-      end
-
-      def visit_tlambeg(node)
-        raise
-      end
-
       def visit_top_const_field(node)
         s(:casgn, [s(:cbase), node.constant.value.to_sym])
       end
@@ -1087,17 +959,9 @@ module SyntaxTree
         s(:const, [s(:cbase), node.constant.value.to_sym])
       end
 
-      def visit_tstring_beg(node)
-        raise
-      end
-
       def visit_tstring_content(node)
         value = node.value.gsub(/([^[:ascii:]])/) { $1.dump[1...-1] }
         s(:str, ["\"#{value}\"".undump])
-      end
-
-      def visit_tstring_end(node)
-        raise
       end
 
       def visit_unary(node)
@@ -1175,10 +1039,6 @@ module SyntaxTree
         s(:send, [nil, node.value.value.to_sym], location: location)
       end
 
-      def visit_void_stmt(node)
-        raise
-      end
-
       def visit_when(node)
         s(:when, visit_all(node.arguments.parts) + [visit(node.statements)])
       end
@@ -1205,14 +1065,6 @@ module SyntaxTree
         s(:array, visit_all(node.elements))
       end
 
-      def visit_words_beg(node)
-        raise
-      end
-
-      def visit_xstring(node)
-        raise
-      end
-
       def visit_xstring_literal(node)
         s(:xstr, visit_all(node.parts))
       end
@@ -1232,10 +1084,6 @@ module SyntaxTree
 
       def visit_zsuper(node)
         s(:zsuper)
-      end
-
-      def visit___end__(node)
-        raise
       end
 
       private

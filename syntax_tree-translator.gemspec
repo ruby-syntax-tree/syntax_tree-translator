@@ -26,7 +26,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "parser"
   spec.add_dependency "rubocop-ast"
   spec.add_dependency "ruby_parser"
-  spec.add_dependency "syntax_tree"
+  spec.add_dependency "syntax_tree", ">= 2.7.0"
 
   spec.add_development_dependency "bundler"
   spec.add_development_dependency "minitest"
