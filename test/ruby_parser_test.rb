@@ -214,8 +214,5 @@ AssertParse::SKIPS = [
   "test_zomg_sometimes_i_hate_this_project",
 
   # Skipping this as it's meant to raise an error.
-  "test_magic_encoding_comment__bad",
-
-  # Skipping this until we can get shadow args on lambda literals working.
-  "test_stabby_proc_scope"
+  "test_magic_encoding_comment__bad"
 ]

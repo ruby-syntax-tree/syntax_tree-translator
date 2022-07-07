@@ -409,7 +409,8 @@ module SyntaxTree
 
       # Visit a LambdaVar node.
       def visit_lambda_var(node)
-        visit(node.params)
+        type, *children = visit(node.params)
+        s(:args, *children, *node.locals.map { |local| s(:shadow, local.value.to_sym) })
       end
 
       # Visit a MAssign node.

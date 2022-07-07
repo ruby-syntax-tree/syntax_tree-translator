@@ -642,7 +642,9 @@ module SyntaxTree
       end
 
       def visit_lambda_var(node)
-        visit(node.params)
+        shadowargs = node.locals.map { |local| s(:shadowarg, [local.value.to_sym]) }
+
+        s(:args, visit(node.params).children + shadowargs)
       end
 
       def visit_massign(node)

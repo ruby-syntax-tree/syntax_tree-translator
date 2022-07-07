@@ -10,11 +10,6 @@ module ParseHelper
     # but parser is parsing it as a separate operator.
     "test_unary_num_pow_precedence:3504",
 
-    # Skipping this for now until https://github.com/ruby/ruby/pull/5801 is
-    # merged. At that point we'll want to support the more recent ripper events
-    # in Syntax Tree and then also find a way to support older versions.
-    "test_send_lambda_args_shadow:3672",
-
     # Not much to be done about this. Basically, regular expressions with named
     # capture groups that use the =~ operator inject local variables into the
     # current scope. In the parser gem, it detects this and changes future
@@ -52,6 +47,8 @@ module ParseHelper
     "test_control_meta_escape_chars_in_regexp__since_31:*",
   ]
 
+  # These are failures that we need to take care of (or determine the reason
+  # that we're not going to handle them).
   TODO_FAILURES = [
     "test_dedenting_heredoc:333",
     "test_dedenting_heredoc:389",
