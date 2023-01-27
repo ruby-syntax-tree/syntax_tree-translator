@@ -38,7 +38,8 @@ module SyntaxTree
 
       # Visit an Alias node.
       def visit_alias(node)
-        s(:alias, visit(node.left), visit(node.right))
+        type = node.var_alias? ? :valias : :alias
+        s(type, visit(node.left), visit(node.right))
       end
 
       # Visit an ArgBlock node.
@@ -148,9 +149,15 @@ module SyntaxTree
         s(:break, *visit(node.arguments)[1..])
       end
 
-      # Visit a Call node.
+      # Visit a CallNode node.
       def visit_call(node)
         case node
+        in { receiver: nil, arguments: Args[parts: []] | ArgParen[arguments: nil] }
+          s(:call, nil, node.message.value.to_sym)
+        in { receiver: nil, arguments: ArgParen[arguments: { parts: }] }
+          s(:call, nil, node.message.value.to_sym, *visit_all(parts))
+        in { receiver: nil, arguments: ArgParen[arguments: ArgsForward] }
+          s(:call, nil, node.message.value.to_sym, s(:forwarded_args))
         in { message: :call, arguments: ArgParen[arguments: nil] }
           s(call_type(node.operator), visit(node.receiver), :call)
         in { message: :call, arguments: ArgParen[arguments: { parts: }] }
@@ -183,7 +190,14 @@ module SyntaxTree
 
       # Visit a Command node.
       def visit_command(node)
-        s(:call, nil, node.message.value.to_sym, *visit_all(node.arguments.parts))
+        call = s(:call, nil, node.message.value.to_sym, *visit_all(node.arguments.parts))
+
+        if node.block
+          block = node.block.bodystmt.empty? ? nil : visit(node.block.bodystmt)
+          s(:iter, call, visit(node.block.block_var), *block)
+        else
+          call
+        end
       end
 
       # Visit a CommandCall node.
@@ -198,7 +212,14 @@ module SyntaxTree
             visit_all(parts)
           end
 
-        s(call_type(node.operator), visit(node.receiver), visit(node.message), *arguments)
+        call = s(call_type(node.operator), visit(node.receiver), visit(node.message), *arguments)
+
+        if node.block
+          block = node.block.bodystmt.empty? ? nil : visit(node.block.bodystmt)
+          s(:iter, call, visit(node.block.block_var), *block)
+        else
+          call
+        end
       end
 
       # Visit a Const node.
@@ -224,39 +245,17 @@ module SyntaxTree
       # Visit a Def node.
       def visit_def(node)
         args = (node.params in Params) ? node.params : node.params.contents
-        s(:defn, node.name.value.to_sym, visit(args), visit(node.bodystmt))
-      end
 
-      # Visit a DefEndless node.
-      def visit_def_endless(node)
-        children = []
-        children << visit(node.target) if node.target
-
-        args = (node.paren in Params) ? node.paren : node.paren.contents
-        children += [node.name.value.to_sym, visit(args), visit(node.statement)]
-
-        s(node.target ? :defs : :defn, *children)
+        if node.target
+          s(:defs, visit(node.target), visit(node.name), visit(args), visit(node.bodystmt))
+        else
+          s(:defn, node.name.value.to_sym, visit(args), visit(node.bodystmt))
+        end
       end
 
       # Visit a Defined node.
       def visit_defined(node)
         s(:defined, visit(node.value))
-      end
-
-      # Visit a Defs node.
-      def visit_defs(node)
-        args = (node.params in Params) ? node.params : node.params.contents
-        s(:defs, visit(node.target), visit(node.name), visit(args), visit(node.bodystmt))
-      end
-
-      # Visit a Dot2 node.
-      def visit_dot2(node)
-        s(:dot2, visit(node.left), visit(node.right))
-      end
-
-      # Visit a Dot3 node.
-      def visit_dot3(node)
-        s(:dot3, visit(node.left), visit(node.right))
       end
 
       # Visit a DynaSymbol node.
@@ -287,18 +286,6 @@ module SyntaxTree
       def visit_elsif(node)
         statements = node.statements.empty? ? nil : visit(node.statements)
         s(:if, visit(node.predicate), statements, visit(node.consequent))
-      end
-
-      # Visit a FCall node.
-      def visit_fcall(node)
-        case node
-        in { arguments: Args[parts: []] | ArgParen[arguments: nil] }
-          s(:call, nil, node.value.value.to_sym)
-        in { arguments: ArgParen[arguments: { parts: }] }
-          s(:call, nil, node.value.value.to_sym, *visit_all(parts))
-        in { arguments: ArgParen[arguments: ArgsForward] }
-          s(:call, nil, node.value.value.to_sym, s(:forwarded_args))
-        end
       end
 
       # Visit a Field node.
@@ -341,11 +328,6 @@ module SyntaxTree
       def visit_if(node)
         statements = node.statements.empty? ? nil : visit(node.statements)
         s(:if, visit(node.predicate), statements, visit(node.consequent))
-      end
-
-      # Visit an IfMod node.
-      def visit_if_mod(node)
-        s(:if, visit(node.predicate), visit(node.statement), nil)
       end
 
       # Visit an IfOp node.
@@ -409,7 +391,7 @@ module SyntaxTree
 
       # Visit a LambdaVar node.
       def visit_lambda_var(node)
-        type, *children = visit(node.params)
+        _type, *children = visit(node.params)
         s(:args, *children, *node.locals.map { |local| s(:shadow, local.value.to_sym) })
       end
 
@@ -420,16 +402,9 @@ module SyntaxTree
 
       # Visit a MethodAddBlock node.
       def visit_method_add_block(node)
-        statements =
-          if node.block in BraceBlock
-            node.block.statements
-          else
-            node.block.bodystmt
-          end
+        block = node.block.bodystmt.empty? ? nil : visit(node.block.bodystmt)
 
-        block = statements.empty? ? nil : visit(statements)
-
-        if node.call in Break | Next | Return | Yield
+        if node.call in Break | Next | ReturnNode | YieldNode
           type, *children = visit(node.call)
           s(type, s(:iter, *children, visit(node.block.block_var), *block))
         else
@@ -518,6 +493,12 @@ module SyntaxTree
       # Visit a QWords node.
       def visit_qwords(node)
         s(:array, *visit_all(node.elements))
+      end
+
+      # Visit a Range node.
+      def visit_range(node)
+        type = node.operator.value == ".." ? :dot2 : :dot3
+        s(type, visit(node.left), visit(node.right))
       end
 
       # Visit a RAssign node.
@@ -647,24 +628,14 @@ module SyntaxTree
         end
       end
 
-      # Visit an UnlessMod node.
-      def visit_unless_mod(node)
-        s(:unless, visit(node.predicate), visit(node.statement), nil)
+      # Visit an Unless node.
+      def visit_unless(node)
+        s(:unless, visit(node.predicate), visit(node.statements), visit(node.consequent))
       end
 
       # Visit an Until node.
       def visit_until(node)
         s(:until, visit(node.predicate), visit(node.statements), true)
-      end
-
-      # Visit an UntilMod node.
-      def visit_until_mod(node)
-        s(:until, visit(node.predicate), visit(node.statement), true)
-      end
-
-      # Visit a VarAlias node.
-      def visit_var_alias(node)
-        s(:valias, visit(node.left), visit(node.right))
       end
 
       # Visit a VarField node.
@@ -701,11 +672,6 @@ module SyntaxTree
       # Visit a While node.
       def visit_while(node)
         s(:while, visit(node.predicate), visit(node.statements), true)
-      end
-
-      # Visit a WhileMod node.
-      def visit_while_mod(node)
-        s(:while, visit(node.predicate), visit(node.statement), true)
       end
 
       # Visit a Word node.
@@ -750,16 +716,13 @@ module SyntaxTree
       # Visit a Yield node.
       def visit_yield(node)
         case node
+        in { arguments: nil }
+          s(:yield)
         in { arguments: Args[parts:] }
           s(:yield, *visit_all(parts))
         in { arguments: Paren[contents: Args[parts:]] }
           s(:yield, *visit_all(parts))
         end
-      end
-
-      # Visit a Yield0 node.
-      def visit_yield0(node)
-        s(:yield)
       end
 
       # Visit a ZSuper node.
