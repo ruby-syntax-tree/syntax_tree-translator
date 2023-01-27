@@ -190,7 +190,14 @@ module SyntaxTree
 
       # Visit a Command node.
       def visit_command(node)
-        s(:call, nil, node.message.value.to_sym, *visit_all(node.arguments.parts))
+        call = s(:call, nil, node.message.value.to_sym, *visit_all(node.arguments.parts))
+
+        if node.block
+          block = node.block.bodystmt.empty? ? nil : visit(node.block.bodystmt)
+          s(:iter, call, visit(node.block.block_var), *block)
+        else
+          call
+        end
       end
 
       # Visit a CommandCall node.
@@ -205,7 +212,14 @@ module SyntaxTree
             visit_all(parts)
           end
 
-        s(call_type(node.operator), visit(node.receiver), visit(node.message), *arguments)
+        call = s(call_type(node.operator), visit(node.receiver), visit(node.message), *arguments)
+
+        if node.block
+          block = node.block.bodystmt.empty? ? nil : visit(node.block.bodystmt)
+          s(:iter, call, visit(node.block.block_var), *block)
+        else
+          call
+        end
       end
 
       # Visit a Const node.
