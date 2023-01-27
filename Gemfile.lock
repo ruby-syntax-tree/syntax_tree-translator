@@ -15,7 +15,7 @@ GEM
     minitest (5.16.3)
     parser (3.1.2.1)
       ast (~> 2.4.1)
-    prettier_print (1.1.0)
+    prettier_print (1.2.0)
     rake (13.0.6)
     rubocop-ast (1.23.0)
       parser (>= 3.1.1.0)
@@ -28,8 +28,8 @@ GEM
       simplecov_json_formatter (~> 0.1)
     simplecov-html (0.12.3)
     simplecov_json_formatter (0.1.4)
-    syntax_tree (5.0.0)
-      prettier_print (>= 1.1.0)
+    syntax_tree (5.3.0)
+      prettier_print (>= 1.2.0)
 
 PLATFORMS
   x86_64-darwin-21
