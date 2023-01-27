@@ -248,6 +248,12 @@ module SyntaxTree
         type = send_type(node.operator)
 
         case node
+        in { receiver: nil, arguments: Args[parts: []] | ArgParen[arguments: nil] }
+          s(:send, [nil, node.message.value.to_sym])
+        in { receiver: nil, arguments: ArgParen[arguments: { parts: }] }
+          s(:send, [nil, node.message.value.to_sym, *visit_all(parts)])
+        in { receiver: nil, arguments: ArgParen[arguments: ArgsForward] }
+          s(:send, [nil, node.message.value.to_sym, s(:forwarded_args)])
         in { message: :call, arguments: ArgParen[arguments: nil] }
           s(type, [visit(node.receiver), :call])
         in { message: :call, arguments: ArgParen[arguments: { parts: }] }
@@ -322,34 +328,16 @@ module SyntaxTree
 
       def visit_def(node)
         args = (node.params in Params) ? node.params : node.params.contents
-        s(:def, [node.name.value.to_sym, visit(args), visit(node.bodystmt)])
-      end
 
-      def visit_def_endless(node)
-        children = []
-        children << visit(node.target) if node.target
-
-        args = (node.paren in Params) ? node.paren : node.paren.contents
-        children += [node.name.value.to_sym, visit(args), visit(node.statement)]
-
-        s(node.target ? :defs : :def, children)
+        if node.target
+          s(:defs, [visit(node.target), node.name.value.to_sym, visit(args), visit(node.bodystmt)])
+        else
+          s(:def, [node.name.value.to_sym, visit(args), visit(node.bodystmt)])
+        end
       end
 
       def visit_defined(node)
         s(:defined?, [visit(node.value)])
-      end
-
-      def visit_defs(node)
-        args = (node.params in Params) ? node.params : node.params.contents
-        s(:defs, [visit(node.target), node.name.value.to_sym, visit(args), visit(node.bodystmt)])
-      end
-
-      def visit_dot2(node)
-        s(:irange, [visit(node.left), visit(node.right)])
-      end
-
-      def visit_dot3(node)
-        s(:erange, [visit(node.left), visit(node.right)])
       end
 
       def visit_dyna_symbol(node)
@@ -379,17 +367,6 @@ module SyntaxTree
 
       def visit_ensure(node)
         s(:ensure, [visit(node.statements)])
-      end
-
-      def visit_fcall(node)
-        case node
-        in { arguments: Args[parts: []] | ArgParen[arguments: nil] }
-          s(:send, [nil, node.value.value.to_sym])
-        in { arguments: ArgParen[arguments: { parts: }] }
-          s(:send, [nil, node.value.value.to_sym, *visit_all(parts)])
-        in { arguments: ArgParen[arguments: ArgsForward] }
-          s(:send, [nil, node.value.value.to_sym, s(:forwarded_args)])
-        end
       end
 
       def visit_field(node)
@@ -547,22 +524,17 @@ module SyntaxTree
         s(:lvar, [node.value.to_sym])
       end
 
+      # Visit an IfNode node.
       def visit_if(node)
         predicate =
-          case node.predicate
-          in Dot2
-            s(:iflipflop, visit(node.predicate).children)
-          in Dot3
-            s(:eflipflop, visit(node.predicate).children)
+          if node.predicate.is_a?(RangeNode)
+            type = node.predicate.operator.value == ".." ? :iflipflop : :eflipflop
+            s(type, visit(node.predicate).children)
           else
             visit(node.predicate)
           end
 
         s(:if, [predicate, visit(node.statements), visit(node.consequent)])
-      end
-
-      def visit_if_mod(node)
-        s(:if, [visit(node.predicate), visit(node.statement), nil])
       end
 
       def visit_if_op(node)
@@ -578,9 +550,9 @@ module SyntaxTree
 
       def visit_in(node)
         case node
-        in { pattern: IfMod[predicate:, statement:], statements: }
+        in { pattern: IfNode[predicate:, statement:], statements: }
           s(:in_pattern, [visit(statement), s(:if_guard, [visit(predicate)]), visit(statements)])
-        in { pattern: UnlessMod[predicate:, statement:], statements: }
+        in { pattern: UnlessNode[predicate:, statement:], statements: }
           s(:in_pattern, [visit(statement), s(:unless_guard, [visit(predicate)]), visit(statements)])
         else
           s(:in_pattern, [visit(node.pattern), nil, visit(node.statements)])
@@ -652,13 +624,6 @@ module SyntaxTree
       end
 
       def visit_method_add_block(node)
-        statements =
-          if node.block in BraceBlock
-            node.block.statements
-          else
-            node.block.bodystmt
-          end
-
         arguments =
           if node.block.block_var
             visit(node.block.block_var)
@@ -667,16 +632,16 @@ module SyntaxTree
           end
 
         type = :block
-        if !node.block.block_var && (maximum = num_block_type(statements))
+        if !node.block.block_var && (maximum = num_block_type(node.block.bodystmt))
           type = :numblock
           arguments = maximum
         end
 
-        if node.call in Break | Next | Return
+        if node.call in Break | Next | ReturnNode
           call = visit(node.call)
-          s(call.type, [s(type, [*call.children, arguments, visit(statements)])])
+          s(call.type, [s(type, [*call.children, arguments, visit(node.block.bodystmt)])])
         else
-          s(type, [visit(node.call), arguments, visit(statements)])
+          s(type, [visit(node.call), arguments, visit(node.block.bodystmt)])
         end
       end
 
@@ -767,7 +732,7 @@ module SyntaxTree
       def visit_paren(node)
         if node in { contents: nil | Statements[body: [VoidStmt]] }
           s(:begin)
-        elsif stack[-2] in Defs[target: ^(node)]
+        elsif stack[-2].is_a?(DefNode) && stack[-2].target.nil? && stack[-2].target == node
           visit(node.contents)
         else
           visited = visit(node.contents)
@@ -795,6 +760,12 @@ module SyntaxTree
         s(:array, visit_all(node.elements))
       end
 
+      # Visit a RangeNode node.
+      def visit_range(node)
+        type = node.operator.value == ".." ? :irange : :erange
+        s(type, [visit(node.left), visit(node.right)])
+      end
+
       def visit_rassign(node)
         type = (node.operator in Op[value: "=>"]) ? :match_pattern : :match_pattern_p
         s(type, [visit(node.value), visit(node.pattern)])
@@ -813,9 +784,9 @@ module SyntaxTree
         children << s(:regopt, node.ending.scan(/[a-z]/).sort.map(&:to_sym))
         regexp = s(:regexp, children)
 
-        if stack[-2] in If[predicate: ^(node)] | Unless[predicate: ^(node)]
+        if stack[-2] in IfNode[predicate: ^(node)] | UnlessNode[predicate: ^(node)]
           s(:match_current_line, [regexp])
-        elsif stack[-3] in If[predicate: Unary[statement: ^(node), operator: "!"]] | Unless[predicate: Unary[statement: ^(node), operator: "!"]]
+        elsif stack[-3] in IfNode[predicate: Unary[statement: ^(node), operator: "!"]] | UnlessNode[predicate: Unary[statement: ^(node), operator: "!"]]
           s(:match_current_line, [regexp])
         elsif stack[-4] in Program[statements: { body: [*, Unary[statement: ^(node), operator: "!"]] }]
           s(:match_current_line, [regexp])
@@ -870,7 +841,7 @@ module SyntaxTree
       end
 
       def visit_return(node)
-        s(:return, visit_all(node.arguments.parts))
+        s(:return, node.arguments ? visit_all(node.arguments.parts) : [])
       end
 
       def visit_return0(node)
@@ -968,10 +939,9 @@ module SyntaxTree
 
       def visit_unary(node)
         case node
-        in { statement: Paren[contents: Statements[body: [Dot2 => contents]]], operator: "!" }
-          s(:send, [s(:begin, [s(:iflipflop, visit(contents).children)]), :"!"])
-        in { statement: Paren[contents: Statements[body: [Dot3 => contents]]], operator: "!" }
-          s(:send, [s(:begin, [s(:eflipflop, visit(contents).children)]), :"!"])
+        in { statement: Paren[contents: Statements[body: [RangeNode => contents]]], operator: "!" }
+          type = contents.operator.value == ".." ? :iflipflop : :eflipflop
+          s(:send, [s(:begin, [s(type, visit(contents).children)]), :"!"])
         in { statement: Int[value:], operator: "+" }
           s(:int, [value.to_i])
         in { statement: Int[value:], operator: "-" }
@@ -997,21 +967,9 @@ module SyntaxTree
         s(:if, [visit(node.predicate), visit(node.consequent), visit(node.statements)])
       end
 
-      def visit_unless_mod(node)
-        s(:if, [visit(node.predicate), nil, visit(node.statement)])
-      end
-
       def visit_until(node)
-        s(:until, [visit(node.predicate), visit(node.statements)])
-      end
-
-      def visit_until_mod(node)
-        children = [visit(node.predicate), visit(node.statement)]
-        s((node.statement in Begin) ? :until_post : :until, children)
-      end
-
-      def visit_var_alias(node)
-        s(:alias, [visit(node.left), visit(node.right)])
+        type = node.modifier? && node.statements.is_a?(Begin) ? :until_post : :until
+        s(type, [visit(node.predicate), visit(node.statements)])
       end
 
       def visit_var_field(node)
@@ -1046,12 +1004,8 @@ module SyntaxTree
       end
 
       def visit_while(node)
-        s(:while, [visit(node.predicate), visit(node.statements)])
-      end
-
-      def visit_while_mod(node)
-        children = [visit(node.predicate), visit(node.statement)]
-        s((node.statement in Begin) ? :while_post : :while, children)
+        type = node.modifier? && node.statements.is_a?(Begin) ? :while_post : :while
+        s(type, [visit(node.predicate), visit(node.statements)])
       end
 
       def visit_word(node)
@@ -1073,15 +1027,13 @@ module SyntaxTree
 
       def visit_yield(node)
         case node.arguments
+        in nil
+          s(:yield)
         in Args[parts:]
           s(:yield, visit_all(parts))
         in Paren[contents: Args[parts:]]
           s(:yield, visit_all(parts))
         end
-      end
-
-      def visit_yield0(node)
-        s(:yield)
       end
 
       def visit_zsuper(node)
