@@ -284,7 +284,14 @@ module SyntaxTree
       end
 
       def visit_command(node)
-        s(:send, [nil, node.message.value.to_sym, *visit_all(node.arguments.parts)])
+        call = s(:send, [nil, node.message.value.to_sym, *visit_all(node.arguments.parts)])
+
+        if node.block
+          type, arguments = block_children(node.block)
+          s(type, [call, arguments, visit(node.block.bodystmt)])
+        else
+          call
+        end
       end
 
       def visit_command_call(node)
@@ -299,7 +306,14 @@ module SyntaxTree
           children += visit_all(parts)
         end
 
-        s(send_type(node.operator), children)
+        call = s(send_type(node.operator), children)
+
+        if node.block
+          type, arguments = block_children(node.block)
+          s(type, [call, arguments, visit(node.block.bodystmt)])
+        else
+          call
+        end
       end
 
       def visit_const(node)
@@ -330,7 +344,8 @@ module SyntaxTree
         args = (node.params in Params) ? node.params : node.params.contents
 
         if node.target
-          s(:defs, [visit(node.target), node.name.value.to_sym, visit(args), visit(node.bodystmt)])
+          target = node.target.is_a?(Paren) ? node.target.contents : node.target
+          s(:defs, [visit(target), node.name.value.to_sym, visit(args), visit(node.bodystmt)])
         else
           s(:def, [node.name.value.to_sym, visit(args), visit(node.bodystmt)])
         end
@@ -550,10 +565,10 @@ module SyntaxTree
 
       def visit_in(node)
         case node
-        in { pattern: IfNode[predicate:, statement:], statements: }
-          s(:in_pattern, [visit(statement), s(:if_guard, [visit(predicate)]), visit(statements)])
-        in { pattern: UnlessNode[predicate:, statement:], statements: }
-          s(:in_pattern, [visit(statement), s(:unless_guard, [visit(predicate)]), visit(statements)])
+        in { pattern: IfNode[predicate:, statements:], statements: in_statements }
+          s(:in_pattern, [visit(statements), s(:if_guard, [visit(predicate)]), visit(in_statements)])
+        in { pattern: UnlessNode[predicate:, statements:], statements: in_statements }
+          s(:in_pattern, [visit(statements), s(:unless_guard, [visit(predicate)]), visit(in_statements)])
         else
           s(:in_pattern, [visit(node.pattern), nil, visit(node.statements)])
         end
@@ -624,18 +639,7 @@ module SyntaxTree
       end
 
       def visit_method_add_block(node)
-        arguments =
-          if node.block.block_var
-            visit(node.block.block_var)
-          else
-            s(:args)
-          end
-
-        type = :block
-        if !node.block.block_var && (maximum = num_block_type(node.block.bodystmt))
-          type = :numblock
-          arguments = maximum
-        end
+        type, arguments = block_children(node.block)
 
         if node.call in Break | Next | ReturnNode
           call = visit(node.call)
@@ -968,12 +972,18 @@ module SyntaxTree
       end
 
       def visit_until(node)
-        type = node.modifier? && node.statements.is_a?(Begin) ? :until_post : :until
+        type =
+          if node.modifier? && (node.statements in Statements[body: [Begin]])
+            :until_post
+          else
+            :until
+          end
+
         s(type, [visit(node.predicate), visit(node.statements)])
       end
 
       def visit_var_field(node)
-        if stack[-2] in AryPtn | Binary[operator: :"=>"] | FndPtn | HshPtn | In | RAssign
+        if [stack[-3], stack[-2]].any? { |parent| parent in AryPtn | Binary[operator: :"=>"] | FndPtn | HshPtn | In | RAssign }
           return s(:match_var, [node.value.value.to_sym])
         end
 
@@ -1004,7 +1014,13 @@ module SyntaxTree
       end
 
       def visit_while(node)
-        type = node.modifier? && node.statements.is_a?(Begin) ? :while_post : :while
+        type =
+          if node.modifier? && (node.statements in Statements[body: [Begin]])
+            :while_post
+          else
+            :while
+          end
+
         s(type, [visit(node.predicate), visit(node.statements)])
       end
 
@@ -1041,6 +1057,23 @@ module SyntaxTree
       end
 
       private
+
+      def block_children(node)
+        arguments =
+          if node.block_var
+            visit(node.block_var)
+          else
+            s(:args)
+          end
+
+        type = :block
+        if !node.block_var && (maximum = num_block_type(node.bodystmt))
+          type = :numblock
+          arguments = maximum
+        end
+
+        [type, arguments]
+      end
 
       # We need to find if we should transform this block into a numblock
       # since there could be new numbered variables like _1.

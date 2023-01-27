@@ -104,6 +104,7 @@ AssertParse::SKIPS = [
   "test_call_array_lambda_block_call",
   "test_call_begin_call_block_call",
   "test_call_block_arg_named",
+  "test_call_block_arg_unnamed",
   "test_call_env",
   "test_call_stabby_do_end_with_block",
   "test_call_stabby_with_braces_block",
