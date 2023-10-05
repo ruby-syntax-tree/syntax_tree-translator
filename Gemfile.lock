@@ -13,11 +13,11 @@ GEM
     ast (2.4.2)
     docile (1.4.0)
     minitest (5.20.0)
-    parser (3.2.2.3)
+    parser (3.2.2.4)
       ast (~> 2.4.1)
       racc
     prettier_print (1.2.1)
-    racc (1.7.0)
+    racc (1.7.1)
     rake (13.0.6)
     rubocop-ast (1.29.0)
       parser (>= 3.2.1.0)
