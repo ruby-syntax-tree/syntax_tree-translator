@@ -1,3 +1,5 @@
+> :warning: Deprecated - use prism's translation layer instead
+
 # SyntaxTree::Translator
 
 [![Build Status](https://github.com/ruby-syntax-tree/syntax_tree-translator/actions/workflows/main.yml/badge.svg)](https://github.com/ruby-syntax-tree/syntax_tree-translator/actions/workflows/main.yml)
